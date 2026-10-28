@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { cors } from 'hono/cors';
 import { applyFeedback, fourAxisMatch, type Profile } from './fourAxisMatch';
 import profilesData from '../data/profiles.json';
 
@@ -14,6 +15,7 @@ type Env = {
 };
 
 const app = new Hono<{ Bindings: Env }>();
+app.use(cors({ origin: '*', allowMethods: ['GET', 'POST'] }));
 const profiles = profilesData as unknown as Record<string, Profile>;
 
 const labelSchema = {
@@ -56,19 +58,34 @@ function toBase64(buf: ArrayBuffer): string {
 app.get('/health', (c) => c.json({ ok: true }));
 
 app.post('/scan', async (c) => {
-  const form = await c.req.formData();
-  const photo = form.get('photo');
-  const user = form.get('user');
-  const buddies = form.get('buddies');
-  if (!(photo instanceof File) || typeof user !== 'string' || !user) {
-    return c.json({ error: 'photo and user required' }, 400);
+  let b64 = '';
+  let mime = 'image/jpeg';
+  let user = '';
+  let buddies = '';
+  if ((c.req.header('content-type') ?? '').includes('application/json')) {
+    const body = await c.req.json();
+    b64 = body.photo_b64 ?? '';
+    mime = body.mime ?? 'image/jpeg';
+    user = body.user ?? '';
+    buddies = body.buddies ?? '';
+    if (!b64 || !user) return c.json({ error: 'photo_b64 and user required' }, 400);
+  } else {
+    const form = await c.req.formData();
+    const photo = form.get('photo');
+    const u = form.get('user');
+    const b = form.get('buddies');
+    if (!(photo instanceof File) || typeof u !== 'string' || !u) {
+      return c.json({ error: 'photo and user required' }, 400);
+    }
+    b64 = toBase64(await photo.arrayBuffer());
+    mime = photo.type === 'image/png' ? 'image/png' : 'image/jpeg';
+    user = u;
+    buddies = typeof b === 'string' ? b : '';
   }
-  const ids = [user, ...(typeof buddies === 'string' && buddies ? buddies.split(',').map((s) => s.trim()).filter(Boolean) : [])];
+  const ids = [user, ...(buddies ? buddies.split(',').map((s) => s.trim()).filter(Boolean) : [])];
   for (const id of ids) {
     if (!profiles[id]) return c.json({ error: `unknown user: ${id}` }, 404);
   }
-  const b64 = toBase64(await photo.arrayBuffer());
-  const mime = photo.type === 'image/png' ? 'image/png' : 'image/jpeg';
   const res = await fetch('https://api.meta.ai/v1/chat/completions', {
     method: 'POST',
     headers: { authorization: `Bearer ${c.env.META_API_KEY}`, 'content-type': 'application/json' },
@@ -87,10 +104,21 @@ app.post('/scan', async (c) => {
       max_tokens: 2000,
     }),
   });
-  if (!res.ok) return c.json({ error: 'label read failed' }, 502);
+  if (!res.ok) {
+    console.error(res.status, await res.text());
+    return c.json({ error: 'label read failed' }, 502);
+  }
   const data = await res.json();
   await trackUsage(c.env, 'meta', data?.usage?.total_tokens ?? 0);
-  const wine = JSON.parse(data?.choices?.[0]?.message?.content ?? '{}');
+  const content = data?.choices?.[0]?.message?.content;
+  let wine;
+  try {
+    wine = content ? JSON.parse(content) : null;
+  } catch {
+    wine = null;
+  }
+  if (!wine?.color) return c.json({ error: 'could not read label' }, 502);
+  // TODO: escalate to muse-wonder-1.0 when confidence < 0.7.
   const matches = ids.map((id) => ({ user: id, score: fourAxisMatch(profiles[id], wine) }));
   return c.json({ wine, matches });
 });
@@ -114,7 +142,10 @@ Refer to wines by grape and country only, never by brand. Speak about *their* ta
       reasoning_effort: 'low',
     }),
   });
-  if (!res.ok) return c.json({ error: 'explanation failed' }, 502);
+  if (!res.ok) {
+    console.error(res.status, await res.text());
+    return c.json({ error: 'explanation failed' }, 502);
+  }
   const data = await res.json();
   await trackUsage(c.env, 'baseten', data?.usage?.total_tokens ?? 0);
   return c.json({ text: data?.choices?.[0]?.message?.content ?? '' });

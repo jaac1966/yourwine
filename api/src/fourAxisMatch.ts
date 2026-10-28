@@ -1,6 +1,7 @@
 export type Axes = { acidity: number; sweetness: number; tannin: number; body: number };
 export type Color = 'red' | 'white' | 'rose' | 'sparkling';
 export type Overlay = { axes: Axes; n: number };
+// Overlays start as copies of base with n: 0; feedback then moves them.
 export type Profile = { base: Axes; red: Overlay; white: Overlay; rose: Overlay };
 export type Wine = Axes & { color: Color };
 export type Verdict = 'loved' | 'not_for_me';

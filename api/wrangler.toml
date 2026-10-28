@@ -1,8 +1,8 @@
-name = "yourwine-api"
+﻿name = "yourwine-api"
 main = "src/index.ts"
 compatibility_date = "2026-10-28"
 
 [[kv_namespaces]]
 binding = "USAGE"
 # create with: wrangler kv namespace create USAGE, then paste its id here
-id = "REPLACE_WITH_KV_ID"
+id = "8a2474130f374d90834e24eed5441ea9"
