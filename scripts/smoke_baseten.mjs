@@ -23,6 +23,7 @@ const res = await fetch('https://inference.baseten.co/v1/chat/completions', {
     messages: [{ role: 'user', content: prompt }],
     max_tokens: 2000,
     temperature: 0.4,
+    reasoning_effort: process.env.REASONING ?? 'low',
   }),
 });
 const ms = Math.round(performance.now() - t0);
