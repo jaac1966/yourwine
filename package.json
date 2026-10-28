@@ -1,0 +1,11 @@
+{
+  "name": "yourwine",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=20.6" },
+  "scripts": {
+    "smoke:meta": "node --env-file=.env scripts/smoke_meta.mjs",
+    "smoke:baseten": "node --env-file=.env scripts/smoke_baseten.mjs"
+  }
+}
