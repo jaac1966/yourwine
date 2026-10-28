@@ -42,7 +42,7 @@ const res = await fetch('https://api.meta.ai/v1/chat/completions', {
     model,
     messages: [{ role: 'user', content }],
     response_format: { type: 'json_schema', json_schema: schema },
-    max_output_tokens: 400,
+    max_tokens: 400,
   }),
 });
 const ms = Math.round(performance.now() - t0);
