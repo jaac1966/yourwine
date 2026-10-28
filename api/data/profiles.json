@@ -1,0 +1,20 @@
+{
+  "alex": {
+    "base": { "acidity": 2, "sweetness": 2, "tannin": 4, "body": 4 },
+    "red": { "axes": { "acidity": 2, "sweetness": 2, "tannin": 4, "body": 4 }, "n": 0 },
+    "white": { "axes": { "acidity": 2, "sweetness": 2, "tannin": 4, "body": 4 }, "n": 0 },
+    "rose": { "axes": { "acidity": 2, "sweetness": 2, "tannin": 4, "body": 4 }, "n": 0 }
+  },
+  "ana": {
+    "base": { "acidity": 4, "sweetness": 2, "tannin": 1, "body": 2 },
+    "red": { "axes": { "acidity": 4, "sweetness": 2, "tannin": 1, "body": 2 }, "n": 0 },
+    "white": { "axes": { "acidity": 4, "sweetness": 2, "tannin": 1, "body": 2 }, "n": 0 },
+    "rose": { "axes": { "acidity": 4, "sweetness": 2, "tannin": 1, "body": 2 }, "n": 0 }
+  },
+  "luis": {
+    "base": { "acidity": 3, "sweetness": 4, "tannin": 2, "body": 3 },
+    "red": { "axes": { "acidity": 3, "sweetness": 4, "tannin": 2, "body": 3 }, "n": 0 },
+    "white": { "axes": { "acidity": 3, "sweetness": 4, "tannin": 2, "body": 3 }, "n": 0 },
+    "rose": { "axes": { "acidity": 3, "sweetness": 4, "tannin": 2, "body": 3 }, "n": 0 }
+  }
+}

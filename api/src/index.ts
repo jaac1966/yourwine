@@ -1,0 +1,141 @@
+import { Hono } from 'hono';
+import { applyFeedback, fourAxisMatch, type Profile } from './fourAxisMatch';
+import profilesData from '../data/profiles.json';
+
+type KV = {
+  get(key: string): Promise<string | null>;
+  put(key: string, value: string): Promise<void>;
+};
+
+type Env = {
+  USAGE: KV;
+  META_API_KEY: string;
+  BASETEN_API_KEY: string;
+};
+
+const app = new Hono<{ Bindings: Env }>();
+const profiles = profilesData as unknown as Record<string, Profile>;
+
+const labelSchema = {
+  name: 'wine_label',
+  schema: {
+    type: 'object',
+    properties: {
+      name: { type: 'string' },
+      winery: { type: 'string' },
+      country: { type: 'string' },
+      region: { type: 'string' },
+      grapes: { type: 'array', items: { type: 'string' } },
+      vintage: { type: ['integer', 'null'] },
+      alcohol: { type: ['number', 'null'] },
+      color: { type: 'string', enum: ['red', 'white', 'rose', 'sparkling'] },
+      acidity: { type: 'integer', minimum: 1, maximum: 5 },
+      sweetness: { type: 'integer', minimum: 1, maximum: 5 },
+      tannin: { type: 'integer', minimum: 1, maximum: 5 },
+      body: { type: 'integer', minimum: 1, maximum: 5 },
+      confidence: { type: 'number' },
+    },
+    required: ['name', 'country', 'color', 'acidity', 'sweetness', 'tannin', 'body', 'confidence'],
+  },
+};
+
+async function trackUsage(env: Env, provider: 'meta' | 'baseten', tokens: number) {
+  if (!tokens) return;
+  const key = `usage:${new Date().toISOString().slice(0, 10)}:${provider}`;
+  const current = Number((await env.USAGE.get(key)) ?? 0);
+  await env.USAGE.put(key, String(current + tokens));
+}
+
+function toBase64(buf: ArrayBuffer): string {
+  const bytes = new Uint8Array(buf);
+  let s = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+
+app.get('/health', (c) => c.json({ ok: true }));
+
+app.post('/scan', async (c) => {
+  const form = await c.req.formData();
+  const photo = form.get('photo');
+  const user = form.get('user');
+  const buddies = form.get('buddies');
+  if (!(photo instanceof File) || typeof user !== 'string' || !user) {
+    return c.json({ error: 'photo and user required' }, 400);
+  }
+  const ids = [user, ...(typeof buddies === 'string' && buddies ? buddies.split(',').map((s) => s.trim()).filter(Boolean) : [])];
+  for (const id of ids) {
+    if (!profiles[id]) return c.json({ error: `unknown user: ${id}` }, 404);
+  }
+  const b64 = toBase64(await photo.arrayBuffer());
+  const mime = photo.type === 'image/png' ? 'image/png' : 'image/jpeg';
+  const res = await fetch('https://api.meta.ai/v1/chat/completions', {
+    method: 'POST',
+    headers: { authorization: `Bearer ${c.env.META_API_KEY}`, 'content-type': 'application/json' },
+    body: JSON.stringify({
+      model: 'muse-spark-1.3',
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: 'Identify the ONE wine bottle held in the hand or closest to the camera. Ignore bottles on the shelf behind it. Read its label and return only the JSON.' },
+            { type: 'image_url', image_url: { url: `data:${mime};base64,${b64}` } },
+          ],
+        },
+      ],
+      response_format: { type: 'json_schema', json_schema: labelSchema },
+      max_tokens: 2000,
+    }),
+  });
+  if (!res.ok) return c.json({ error: 'label read failed' }, 502);
+  const data = await res.json();
+  await trackUsage(c.env, 'meta', data?.usage?.total_tokens ?? 0);
+  const wine = JSON.parse(data?.choices?.[0]?.message?.content ?? '{}');
+  const matches = ids.map((id) => ({ user: id, score: fourAxisMatch(profiles[id], wine) }));
+  return c.json({ wine, matches });
+});
+
+app.post('/explain', async (c) => {
+  const { wine, profile, score, lastLoved } = await c.req.json();
+  const prompt = `You are a friendly sommelier speaking to one person. Taste scale is 1-5.
+User profile: ${JSON.stringify(profile)}.
+Wine on the shelf: ${JSON.stringify(wine)}. Last wine they loved: ${JSON.stringify(lastLoved)}.
+Compatibility score (already computed): ${score}%.
+In two short sentences, tell the user whether they'd like it and why, comparing it to the wine they loved.
+Refer to wines by grape and country only, never by brand. Speak about *their* taste, not about the wine's quality.`;
+  const res = await fetch('https://inference.baseten.co/v1/chat/completions', {
+    method: 'POST',
+    headers: { authorization: `Bearer ${c.env.BASETEN_API_KEY}`, 'content-type': 'application/json' },
+    body: JSON.stringify({
+      model: 'meta-models/muse-spark-open-1026',
+      messages: [{ role: 'user', content: prompt }],
+      max_tokens: 2000,
+      temperature: 0.4,
+      reasoning_effort: 'low',
+    }),
+  });
+  if (!res.ok) return c.json({ error: 'explanation failed' }, 502);
+  const data = await res.json();
+  await trackUsage(c.env, 'baseten', data?.usage?.total_tokens ?? 0);
+  return c.json({ text: data?.choices?.[0]?.message?.content ?? '' });
+});
+
+app.post('/feedback', async (c) => {
+  const { user, wine, verdict } = await c.req.json();
+  if (!profiles[user]) return c.json({ error: `unknown user: ${user}` }, 404);
+  if (verdict !== 'loved' && verdict !== 'not_for_me') {
+    return c.json({ error: 'verdict must be loved or not_for_me' }, 400);
+  }
+  return c.json(applyFeedback(profiles[user], wine, verdict));
+});
+
+app.get('/usage', async (c) => {
+  const day = new Date().toISOString().slice(0, 10);
+  const [meta, baseten] = await Promise.all([
+    c.env.USAGE.get(`usage:${day}:meta`),
+    c.env.USAGE.get(`usage:${day}:baseten`),
+  ]);
+  return c.json({ date: day, meta: Number(meta ?? 0), baseten: Number(baseten ?? 0) });
+});
+
+export default app;

@@ -1,0 +1,10 @@
+[
+  { "name": "Casillero del Diablo Cabernet Sauvignon", "grape": "Cabernet Sauvignon", "country": "Chile", "region": "Valle Central", "vintage": 2021, "alcohol": 13.5, "color": "red", "acidity": 3, "sweetness": 1, "tannin": 4, "body": 4 },
+  { "name": "L.A. Cetto Cabernet Sauvignon", "grape": "Cabernet Sauvignon", "country": "Mexico", "region": "Valle de Guadalupe", "vintage": 2020, "alcohol": 13.0, "color": "red", "acidity": 3, "sweetness": 2, "tannin": 3, "body": 3 },
+  { "name": "Yellow Tail Shiraz", "grape": "Shiraz", "country": "Australia", "region": "South Eastern Australia", "vintage": 2022, "alcohol": 13.5, "color": "red", "acidity": 2, "sweetness": 3, "tannin": 2, "body": 3 },
+  { "name": "Santa Helena Chardonnay", "grape": "Chardonnay", "country": "Chile", "region": "Valle Central", "vintage": 2023, "alcohol": 12.5, "color": "white", "acidity": 3, "sweetness": 2, "tannin": 1, "body": 2 },
+  { "name": "Monte Xanic Chenin Blanc", "grape": "Chenin Blanc", "country": "Mexico", "region": "Valle de Guadalupe", "vintage": 2023, "alcohol": 12.0, "color": "white", "acidity": 4, "sweetness": 2, "tannin": 1, "body": 2 },
+  { "name": "L.A. Cetto Chardonnay", "grape": "Chardonnay", "country": "Mexico", "region": "Baja California", "vintage": 2022, "alcohol": 12.5, "color": "white", "acidity": 3, "sweetness": 2, "tannin": 1, "body": 3 },
+  { "name": "Casillero del Diablo Shiraz Rose", "grape": "Shiraz", "country": "Chile", "region": "Valle Central", "vintage": 2023, "alcohol": 12.5, "color": "rose", "acidity": 3, "sweetness": 2, "tannin": 1, "body": 2 },
+  { "name": "Freixenet Carta Nevada", "grape": "Macabeo", "country": "Spain", "region": "Penedes", "vintage": null, "alcohol": 11.5, "color": "sparkling", "acidity": 4, "sweetness": 3, "tannin": 1, "body": 2 }
+]

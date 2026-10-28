@@ -60,6 +60,15 @@ npm run smoke:meta     # one call to Muse Spark 1.3 (text, or a label photo if y
 npm run smoke:baseten  # one call to Muse Spark Open on Baseten
 ```
 
+API:
+```bash
+cd api && npm install && npm run dev
+```
+```bash
+npm test
+curl -X POST http://localhost:8787/scan -F photo=@label.jpg -F user=alex -F buddies=ana,luis
+```
+
 ## Before the hackathon
 - Research on wine-taste profiling (four axes: acidity, sweetness, tannin, body).
 - A private dataset of Mexican supermarket wines. A **sample** is included in `data/` (facts only: name, grape, region, vintage, alcohol, and the four axes).
