@@ -2,7 +2,9 @@
 
 **Live demo:** _(URL pending — Cloudflare Pages)_
 
-Standing in the wine aisle, you pick up a bottle and your Meta Adventurer glasses tell you — out loud, in seconds — whether you'll actually enjoy it, and whether your partner would, before you pay for it.
+**YourWine is an app for Meta Adventurer glasses that tells you whether you'll like a wine before you buy it — based on your own taste, not the crowd's.** It runs as an Android companion app for the glasses, with a web version so anyone can try it without hardware.
+
+Standing in the wine aisle, you pick up a bottle and your glasses tell you — out loud, in seconds — whether you'll actually enjoy it, and whether your partner would, before you pay for it.
 
 Built for the Meta Global AI Developer Hackathon 2026 (Indie track).
 
@@ -20,8 +22,11 @@ The phone stays in your pocket. It runs the companion Android app that bridges t
 
 ## How it works
 
+**Step 0, once:** open YourWine on your phone when you walk into the store. The app connects to the glasses through the Device Access Toolkit and stays listening; the phone goes back in your pocket. From here on, everything happens on the glasses.
+
 ```
 Meta Adventurer glasses ──photo + voice──▶ Android companion app (Kotlin, DAT)
+        ▲                                     (already open, listening)
                                               │
                                               ▼
                                    YourWine API (Cloudflare Worker)
@@ -37,9 +42,13 @@ Meta Adventurer glasses ──photo + voice──▶ Android companion app (Kotl
 
 The score comes back first — it is arithmetic, not a model, so it is instant. The explanation follows a few seconds later as a second spoken message while you are still holding the bottle.
 
-**Taste profile.** Four axes, each 1–5: acidity, sweetness, tannin, body. Calibrated by rating five wines you already know. Not ratings of the wine — predictions about *you*.
+**It learns your taste from you — the Rule of 5 Wines.** No crowd ratings, no critics, no quiz about coffee and chocolate. You taste five wines and say how much you liked each one; from those five, YourWine builds your profile on four axes (acidity, sweetness, tannin, body — each 1–5). The same rule applies per color: five reds, five whites, five rosés, each unlocking its own profile. Everything that follows is a prediction about *you*, never a rating of the wine.
 
 **Winebuddies.** Connect with the people you drink with. One scan answers for everyone: your match and theirs.
+
+**It learns.** After you drink it: "loved it" or "not for me", by voice. The profile shifts and the next verdict changes.
+
+**It compares.** Point at two or three bottles: "which one should I take?" The answer names the one to grab, not a score per label.
 
 ## Try the hosted demo in 2 minutes
 _(to be completed when the demo is deployed)_
