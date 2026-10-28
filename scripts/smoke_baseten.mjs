@@ -21,7 +21,7 @@ const res = await fetch('https://inference.baseten.co/v1/chat/completions', {
   body: JSON.stringify({
     model: MODEL,
     messages: [{ role: 'user', content: prompt }],
-    max_tokens: 600,
+    max_tokens: 2000,
     temperature: 0.4,
   }),
 });
@@ -36,4 +36,4 @@ const msg = data.choices?.[0]?.message ?? {};
 console.log(`${MODEL} · ${ms} ms`);
 console.log('usage:', data.usage);
 if (msg.reasoning_content) console.log(`(reasoning: ${msg.reasoning_content.length} chars, not shown)`);
-console.log(msg.content);
+console.log(msg.content ?? ('(no content, finish_reason=' + data.choices?.[0]?.finish_reason + ')'));
