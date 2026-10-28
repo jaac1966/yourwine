@@ -2,7 +2,7 @@
 
 **Live demo:** _(URL pending — Cloudflare Pages)_
 
-Standing in the wine aisle, you pick up a bottle and your Ray-Ban Meta glasses tell you — out loud, in seconds — whether you'll actually enjoy it, and whether your partner would, before you pay for it.
+Standing in the wine aisle, you pick up a bottle and your Meta Adventurer glasses tell you — out loud, in seconds — whether you'll actually enjoy it, and whether your partner would, before you pay for it.
 
 Built for the Meta Global AI Developer Hackathon 2026 (Indie track).
 
@@ -10,7 +10,7 @@ Built for the Meta Global AI Developer Hackathon 2026 (Indie track).
 
 Choosing wine is a hands-busy, eyes-on-the-shelf moment. A phone app means putting the bottle down, unlocking, framing a photo, reading a screen. With glasses the whole interaction is: look at the label, ask, listen.
 
-YourWine is built for Ray-Ban Meta glasses from the ground up:
+YourWine is built for Meta Adventurer glasses from the ground up:
 
 - **Camera** reads the label — the bottle in your hand, not the twenty behind it.
 - **Microphone** takes the question ("would I like this?", "and Mary?").
@@ -21,7 +21,7 @@ The phone stays in your pocket. It runs the companion Android app that bridges t
 ## How it works
 
 ```
-Ray-Ban Meta glasses ──photo + voice──▶ Android companion app (Kotlin, DAT)
+Meta Adventurer glasses ──photo + voice──▶ Android companion app (Kotlin, DAT)
                                               │
                                               ▼
                                    YourWine API (Cloudflare Worker)
@@ -54,7 +54,7 @@ npm run smoke:baseten  # one call to Muse Spark Open on Baseten
 ## Before the hackathon
 - Research on wine-taste profiling (four axes: acidity, sweetness, tannin, body).
 - A private dataset of Mexican supermarket wines. A **sample** is included in `data/` (facts only: name, grape, region, vintage, alcohol, and the four axes).
-- Test photos and videos of wine labels, taken by the author with Ray-Ban Meta glasses and a phone (`demo/labels/`).
+- Test photos and videos of wine labels, taken by the author with Meta Adventurer glasses and a phone (`demo/labels/`).
 
 ## Built during the hackathon (Oct 27 – Nov 4, 2026)
 All code in this repository was written during the event.
@@ -63,7 +63,7 @@ All code in this repository was written during the event.
 ## Meta tools used
 | Step | Tool |
 |---|---|
-| Capture (photo, voice in, voice out) | Ray-Ban Meta glasses via Wearables Device Access Toolkit |
+| Capture (photo, voice in, voice out) | Meta Adventurer glasses via Wearables Device Access Toolkit |
 | Voice in | Muse Voice Transcribe |
 | Read the label, infer the wine profile | Muse Spark 1.3 (Muse Wonder for low-confidence cases) |
 | Personal explanation | Muse Spark Open (`meta-models/muse-spark-open-1026`, Baseten) |
@@ -75,7 +75,7 @@ All code in this repository was written during the event.
 | Call | Input | Latency | Prompt tok | Reasoning tok | Result |
 |---|---|---|---|---|---|
 | Muse Spark 1.3 | text only (fictional label) | 4.0 s | 43 | 742 | full JSON, conf 0.99 |
-| Muse Spark 1.3 | full-size photo from Ray-Ban Meta, bottle in hand, 6 bottles behind | 8.1 s | 4,057 | 946 | correct bottle, conf 0.95; grapes/region left empty (not on front label) |
+| Muse Spark 1.3 | full-size photo from Meta Adventurer, bottle in hand, 6 bottles behind | 8.1 s | 4,057 | 946 | correct bottle, conf 0.95; grapes/region left empty (not on front label) |
 | Muse Spark Open (Baseten) | 2-sentence explanation, default reasoning | 5.1 s | 304 | 1,390 | good text |
 | Muse Spark Open (Baseten) | same, `reasoning_effort: low` | 3.1 s | 304 | 763 | good text, kept |
 
@@ -89,7 +89,7 @@ This repository is **source-available**, not open source. See `LICENSE` (PolyFor
 Wine names, labels and logos that appear in this repository, the app and the demo video
 are trademarks or copyrighted works of their respective owners. They are shown only to
 identify products. YourWine is not affiliated with, sponsored by or endorsed by any
-winery, brand or retailer. Ray-Ban Meta, Muse and Meta are trademarks of their owners;
+winery, brand or retailer. Meta Adventurer, Muse and Meta are trademarks of their owners;
 YourWine is an independent hackathon project.
 
 All label photos in this repository were taken by the author. Product descriptions,
