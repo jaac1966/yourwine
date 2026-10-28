@@ -16,6 +16,11 @@ type Env = {
 
 const app = new Hono<{ Bindings: Env }>();
 app.use(cors({ origin: '*', allowMethods: ['GET', 'POST'] }));
+app.onError((err, c) => {
+  if (err instanceof SyntaxError) return c.json({ error: 'invalid json' }, 400);
+  console.error(err);
+  return c.text('Internal Server Error', 500);
+});
 const profiles = profilesData as unknown as Record<string, Profile>;
 
 const labelSchema = {
@@ -55,6 +60,40 @@ function toBase64(buf: ArrayBuffer): string {
   return btoa(s);
 }
 
+async function readLabel(apiKey: string, model: string, mime: string, b64: string) {
+  const res = await fetch('https://api.meta.ai/v1/chat/completions', {
+    method: 'POST',
+    headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
+    body: JSON.stringify({
+      model,
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: 'Identify the ONE wine bottle held in the hand or closest to the camera. Ignore bottles on the shelf behind it. Read its label and return only the JSON.' },
+            { type: 'image_url', image_url: { url: `data:${mime};base64,${b64}` } },
+          ],
+        },
+      ],
+      response_format: { type: 'json_schema', json_schema: labelSchema },
+      max_tokens: 2000,
+    }),
+  });
+  if (!res.ok) {
+    console.error(res.status, await res.text());
+    return null;
+  }
+  const data = await res.json();
+  let wine = null;
+  try {
+    const content = data?.choices?.[0]?.message?.content;
+    wine = content ? JSON.parse(content) : null;
+  } catch {
+    wine = null;
+  }
+  return { wine, tokens: data?.usage?.total_tokens ?? 0 };
+}
+
 app.get('/health', (c) => c.json({ ok: true }));
 
 app.post('/scan', async (c) => {
@@ -86,41 +125,24 @@ app.post('/scan', async (c) => {
   for (const id of ids) {
     if (!profiles[id]) return c.json({ error: `unknown user: ${id}` }, 404);
   }
-  const res = await fetch('https://api.meta.ai/v1/chat/completions', {
-    method: 'POST',
-    headers: { authorization: `Bearer ${c.env.META_API_KEY}`, 'content-type': 'application/json' },
-    body: JSON.stringify({
-      model: 'muse-spark-1.3',
-      messages: [
-        {
-          role: 'user',
-          content: [
-            { type: 'text', text: 'Identify the ONE wine bottle held in the hand or closest to the camera. Ignore bottles on the shelf behind it. Read its label and return only the JSON.' },
-            { type: 'image_url', image_url: { url: `data:${mime};base64,${b64}` } },
-          ],
-        },
-      ],
-      response_format: { type: 'json_schema', json_schema: labelSchema },
-      max_tokens: 2000,
-    }),
-  });
-  if (!res.ok) {
-    console.error(res.status, await res.text());
-    return c.json({ error: 'label read failed' }, 502);
+  const spark = await readLabel(c.env.META_API_KEY, 'muse-spark-1.3', mime, b64);
+  if (!spark) return c.json({ error: 'label read failed' }, 502);
+  await trackUsage(c.env, 'meta', spark.tokens);
+  if (!spark.wine?.color) return c.json({ error: 'could not read label' }, 502);
+  let wine = spark.wine;
+  let readBy: 'spark' | 'wonder' = 'spark';
+  if ((wine.confidence ?? 1) < 0.7) {
+    const wonder = await readLabel(c.env.META_API_KEY, 'muse-wonder-1.0', mime, b64);
+    if (wonder) {
+      await trackUsage(c.env, 'meta', wonder.tokens);
+      if (wonder.wine?.color && (wonder.wine.confidence ?? 0) > (wine.confidence ?? 0)) {
+        wine = wonder.wine;
+        readBy = 'wonder';
+      }
+    }
   }
-  const data = await res.json();
-  await trackUsage(c.env, 'meta', data?.usage?.total_tokens ?? 0);
-  const content = data?.choices?.[0]?.message?.content;
-  let wine;
-  try {
-    wine = content ? JSON.parse(content) : null;
-  } catch {
-    wine = null;
-  }
-  if (!wine?.color) return c.json({ error: 'could not read label' }, 502);
-  // TODO: escalate to muse-wonder-1.0 when confidence < 0.7.
   const matches = ids.map((id) => ({ user: id, score: fourAxisMatch(profiles[id], wine) }));
-  return c.json({ wine, matches });
+  return c.json({ wine, matches, readBy });
 });
 
 app.post('/explain', async (c) => {

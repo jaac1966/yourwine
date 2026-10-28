@@ -3,8 +3,15 @@ import app from './index';
 
 const wine = { name: 'Test Red', country: 'Mexico', color: 'red', acidity: 3, sweetness: 2, tannin: 4, body: 4, confidence: 0.9 };
 
+const puts: Array<[string, string]> = [];
+
 const env = () => ({
-  USAGE: { get: async () => null, put: async () => {} },
+  USAGE: {
+    get: async () => null,
+    put: async (k: string, v: string) => {
+      puts.push([k, v]);
+    },
+  },
   META_API_KEY: 'test',
   BASETEN_API_KEY: 'test',
 });
@@ -14,6 +21,13 @@ const scanJson = (body: object) =>
 
 function mockMeta(payload: unknown, status = 200) {
   const fetchMock = vi.fn(async () => new Response(JSON.stringify(payload), { status }));
+  vi.stubGlobal('fetch', fetchMock);
+  return fetchMock;
+}
+
+function mockMetaSequence(...payloads: unknown[]) {
+  const fetchMock = vi.fn();
+  for (const p of payloads) fetchMock.mockResolvedValueOnce(new Response(JSON.stringify(p), { status: 200 }));
   vi.stubGlobal('fetch', fetchMock);
   return fetchMock;
 }
@@ -28,6 +42,7 @@ function metaOk(content: string) {
 }
 
 beforeEach(() => {
+  puts.length = 0;
   vi.spyOn(console, 'error').mockImplementation(() => {});
 });
 
@@ -76,6 +91,43 @@ describe('POST /scan', () => {
     const res = await scanJson({ photo_b64: 'abc123', user: 'alex' });
     expect(res.status).toBe(502);
     expect(await res.json()).toEqual({ error: 'label read failed' });
+  });
+
+  it('returns 400 for invalid JSON', async () => {
+    const bad = { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{nope' };
+    const scan = await app.request('/scan', bad, env());
+    expect(scan.status).toBe(400);
+    expect(await scan.json()).toEqual({ error: 'invalid json' });
+    const feedback = await app.request('/feedback', bad, env());
+    expect(feedback.status).toBe(400);
+    expect(await feedback.json()).toEqual({ error: 'invalid json' });
+  });
+
+  it('escalates to Wonder on low confidence and keeps the higher one', async () => {
+    const sparkWine = { ...wine, name: 'Spark Guess', confidence: 0.5 };
+    const wonderWine = { ...wine, name: 'Wonder Read', confidence: 0.95 };
+    const fetchMock = mockMetaSequence(metaOk(JSON.stringify(sparkWine)), metaOk(JSON.stringify(wonderWine)));
+    const res = await scanJson({ photo_b64: 'abc123', user: 'alex' });
+    expect(res.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const first = JSON.parse(fetchMock.mock.calls[0][1].body);
+    const second = JSON.parse(fetchMock.mock.calls[1][1].body);
+    expect(first.model).toBe('muse-spark-1.3');
+    expect(second.model).toBe('muse-wonder-1.0');
+    expect({ ...second, model: first.model }).toEqual(first);
+    const data = await res.json();
+    expect(data.wine.name).toBe('Wonder Read');
+    expect(data.readBy).toBe('wonder');
+    const today = new Date().toISOString().slice(0, 10);
+    expect(puts.map(([k]) => k)).toEqual([`usage:${today}:meta`, `usage:${today}:meta`]);
+  });
+
+  it('never calls Wonder when Spark confidence is high', async () => {
+    const fetchMock = mockMeta(metaOk(JSON.stringify(wine)));
+    const res = await scanJson({ photo_b64: 'abc123', user: 'alex' });
+    expect(res.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect((await res.json()).readBy).toBe('spark');
   });
 });
 

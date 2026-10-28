@@ -69,6 +69,8 @@ npm test
 curl -X POST http://localhost:8787/scan -F photo=@label.jpg -F user=alex -F buddies=ana,luis
 ```
 
+Hosted API: https://yourwine-api.jaac.workers.dev (try /health)
+
 ## Before the hackathon
 - Research on wine-taste profiling (four axes: acidity, sweetness, tannin, body).
 - A private dataset of Mexican supermarket wines. A **sample** is included in `data/` (facts only: name, grape, region, vintage, alcohol, and the four axes).
@@ -77,6 +79,7 @@ curl -X POST http://localhost:8787/scan -F photo=@label.jpg -F user=alex -F budd
 ## Built during the hackathon (Oct 27 – Nov 4, 2026)
 All code in this repository was written during the event.
 - **Oct 27** — Repo setup. Smoke tests against the Meta Model API and Baseten. First real label read from a glasses photo. See measurements below.
+- **Oct 28** — Cloudflare Worker with /scan, /explain, /feedback, /usage; 4AM color-aware score with tests; deployed.
 
 ## Meta tools used
 | Step | Tool |
