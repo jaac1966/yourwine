@@ -51,3 +51,15 @@ They are not ratings or assessments of any wine's quality.
 YourWine is intended only for adults of legal drinking age in their country
 (18+ in Mexico, 21+ in the United States). It does not sell alcohol and makes no
 health claims. Please enjoy wine responsibly.
+
+## Measurements log
+
+### Oct 27 — first calls, Windows laptop, Querétaro
+| Call | Input | Latency | Prompt tok | Reasoning tok | Result |
+|---|---|---|---|---|---|
+| Muse Spark 1.3 | text only (fictional label) | 4.0 s | 43 | 742 | full JSON, conf 0.99 |
+| Muse Spark 1.3 | full-size photo from Ray-Ban Meta, bottle in hand, 6 bottles behind | 8.1 s | 4,057 | 946 | correct bottle, conf 0.95; grapes/region left empty (not on front label) |
+| Muse Spark Open (Baseten) | 2-sentence explanation, default reasoning | 5.1 s | 304 | 1,390 | good text |
+| Muse Spark Open (Baseten) | same, `reasoning_effort: low` | 3.1 s | 304 | 763 | good text, kept |
+
+Takeaways: both models spend most output tokens on reasoning, so `max_tokens` must be = 2,000 or the answer is empty. Photo size drives Spark cost and latency ? resize to ~1024 px before sending. Score is deterministic and instant; the explanation arrives as a second message.
