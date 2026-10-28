@@ -25,7 +25,7 @@ const schema = {
   },
 };
 
-const content = [{ type: 'text', text: 'Read this wine label. Return only the JSON.' }];
+const content = [{ type: 'text', text: 'Identify the ONE wine bottle held in the hand or closest to the camera. Ignore bottles on the shelf behind it. Read its label and return only the JSON.' }];
 if (photo) {
   const mime = extname(photo) === '.png' ? 'image/png' : 'image/jpeg';
   const b64 = (await readFile(photo)).toString('base64');
