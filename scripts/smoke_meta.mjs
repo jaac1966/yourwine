@@ -42,7 +42,7 @@ const res = await fetch('https://api.meta.ai/v1/chat/completions', {
     model,
     messages: [{ role: 'user', content }],
     response_format: { type: 'json_schema', json_schema: schema },
-    max_tokens: 400,
+    max_tokens: 2000,
   }),
 });
 const ms = Math.round(performance.now() - t0);
@@ -54,4 +54,4 @@ if (!res.ok) {
 const data = await res.json();
 console.log(`${model} · ${ms} ms`);
 console.log('usage:', data.usage);
-console.log(data.choices?.[0]?.message?.content);
+const c = data.choices?.[0]; console.log(c?.message?.content ?? ('(no content, finish_reason=' + c?.finish_reason + ')'));
