@@ -1,5 +1,7 @@
 package app.yourwine
 
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.os.Bundle
 import android.speech.tts.TextToSpeech
 import android.util.Base64
@@ -7,12 +9,15 @@ import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -20,9 +25,14 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.lifecycleScope
 import com.meta.wearable.dat.camera.Camera
 import com.meta.wearable.dat.camera.addCamera
@@ -40,9 +50,12 @@ import com.meta.wearable.dat.core.types.RegistrationState
 import com.meta.wearable.dat.mockdevice.MockDeviceKit
 import com.meta.wearable.dat.mockdevice.api.GlassesModel
 import com.meta.wearable.dat.mockdevice.api.MockGlasses
+import java.io.ByteArrayOutputStream
+import java.io.File
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -59,7 +72,7 @@ class MainActivity : ComponentActivity() {
     private var tts: TextToSpeech? = null
     private var lastWine: JSONObject? = null
 
-    private var registration by mutableStateOf("unknown")
+    private var registration: RegistrationState? by mutableStateOf(null)
     private var devices by mutableStateOf(0)
     private var sessionState by mutableStateOf("none")
     private var sessionStarted by mutableStateOf(false)
@@ -69,6 +82,9 @@ class MainActivity : ComponentActivity() {
     private var scores by mutableStateOf("")
     private var lastError by mutableStateOf("")
     private var mockReady by mutableStateOf(false)
+    private var lastPhotoPath by mutableStateOf<String?>(null)
+    private var showFullPhoto by mutableStateOf(false)
+    private var sessionRetry: Job? = null
 
     private val permissionLauncher =
         registerForActivityResult(Wearables.RequestPermissionContract()) { result ->
@@ -102,8 +118,7 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch {
             Wearables.registrationState.collect { state ->
                 Log.i(TAG, "registration: $state")
-                registration = state.toString()
-                if (state == RegistrationState.REGISTERED && session == null) createSession()
+                registration = state
             }
         }
         lifecycleScope.launch {
@@ -113,9 +128,15 @@ class MainActivity : ComponentActivity() {
             Wearables.devices.collect {
                 Log.i(TAG, "devices: ${it.size}")
                 devices = it.size
+                if (it.isEmpty()) {
+                    sessionRetry?.cancel()
+                    sessionRetry = null
+                } else if (session == null) {
+                    startSessionRetry()
+                }
             }
         }
-        createSession()
+        lastPhotoPath = File(filesDir, "last.jpg").takeIf { it.exists() }?.absolutePath
         setContent { Screen() }
     }
 
@@ -126,6 +147,21 @@ class MainActivity : ComponentActivity() {
         tts?.shutdown()
         tts = null
         super.onDestroy()
+    }
+
+    private fun startSessionRetry() {
+        if (sessionRetry != null) return
+        sessionRetry = lifecycleScope.launch {
+            var attempt = 0
+            val deadline = System.currentTimeMillis() + 60_000
+            while (session == null && devices > 0 && System.currentTimeMillis() < deadline) {
+                attempt += 1
+                Log.i(TAG, "session attempt $attempt")
+                createSession()
+                if (session == null) delay(2000)
+            }
+            sessionRetry = null
+        }
     }
 
     private fun createSession() {
@@ -144,6 +180,11 @@ class MainActivity : ComponentActivity() {
                         Log.i(TAG, "session: $state")
                         sessionState = state.toString()
                         sessionStarted = state == DeviceSessionState.STARTED
+                        if (state == DeviceSessionState.STARTED) lastError = ""
+                        if (state == DeviceSessionState.STOPPED && session === created) {
+                            session = null
+                            camera = null
+                        }
                     }
                 }
                 created.start()
@@ -228,10 +269,15 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun onPhoto(jpeg: ByteArray) {
+        busy = true
         teardownCamera()
         lifecycleScope.launch {
             try {
-                val b64 = withContext(Dispatchers.IO) { Base64.encodeToString(jpeg, Base64.NO_WRAP) }
+                val normalized = withContext(Dispatchers.IO) { normalizePhoto(jpeg) }
+                lastPhotoPath = withContext(Dispatchers.IO) {
+                    File(filesDir, "last.jpg").apply { writeBytes(normalized) }.absolutePath
+                }
+                val b64 = withContext(Dispatchers.IO) { Base64.encodeToString(normalized, Base64.NO_WRAP) }
                 val scan = WineApi.post(
                     "/scan", JSONObject()
                         .put("photo_b64", b64)
@@ -308,6 +354,34 @@ class MainActivity : ComponentActivity() {
         )
     }
 
+    private fun normalizePhoto(jpeg: ByteArray): ByteArray {
+        val format = when {
+            jpeg.size >= 2 && jpeg[0] == 0xFF.toByte() && jpeg[1] == 0xD8.toByte() -> "JPEG"
+            jpeg.size >= 8 && String(jpeg, 4, 4, Charsets.US_ASCII) == "ftyp" -> "HEIC/HEIF"
+            else -> "unknown"
+        }
+        Log.i(TAG, "capture format: $format, ${jpeg.size} bytes")
+        val bitmap = BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size)
+        if (bitmap == null) {
+            Log.w(TAG, "could not decode capture, sending as-is")
+            return jpeg
+        }
+        val out = ByteArrayOutputStream()
+        bitmap.compress(Bitmap.CompressFormat.JPEG, 85, out)
+        bitmap.recycle()
+        val recoded = out.toByteArray()
+        Log.i(TAG, "re-encoded JPEG q85: ${recoded.size} bytes")
+        return recoded
+    }
+
+    private fun decodeThumbnail(path: String, maxDim: Int): ImageBitmap? {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(path, bounds)
+        var sample = 1
+        while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= maxDim) sample *= 2
+        return BitmapFactory.decodeFile(path, BitmapFactory.Options().apply { inSampleSize = sample })?.asImageBitmap()
+    }
+
     private fun speak(text: String) {
         Log.i(TAG, "say: $text")
         tts?.speak(text, TextToSpeech.QUEUE_ADD, null as Bundle?, null as String?)
@@ -326,11 +400,17 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize().padding(24.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    Text("Registration: $registration")
-                    Button(onClick = { Wearables.startRegistration(this@MainActivity) }) {
-                        Text("Link glasses")
+                    Text("Registration: ${registration ?: "unknown"}")
+                    Button(
+                        onClick = { Wearables.startRegistration(this@MainActivity) },
+                        enabled = registration != RegistrationState.REGISTERED,
+                    ) {
+                        Text(if (registration == RegistrationState.REGISTERED) "Linked" else "Link glasses")
                     }
                     Text("Session: $sessionState (devices: $devices)")
+                    Button(onClick = { if (devices > 0) createSession() }, enabled = devices > 0) {
+                        Text("Start session")
+                    }
                     if (BuildConfig.DEBUG) {
                         Button(onClick = { useMock() }) { Text("Use mock glasses") }
                         if (mockReady) {
@@ -343,6 +423,26 @@ class MainActivity : ComponentActivity() {
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Text(if (busy) "Asking…" else "Ask", style = MaterialTheme.typography.headlineMedium)
+                    }
+                    lastPhotoPath?.let { path ->
+                        val thumb = remember(path) { decodeThumbnail(path, 512) }
+                        if (thumb != null) {
+                            Image(
+                                bitmap = thumb,
+                                contentDescription = "last label photo",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.size(96.dp).clickable { showFullPhoto = true },
+                            )
+                        }
+                    }
+                    val fullPath = lastPhotoPath
+                    if (showFullPhoto && fullPath != null) {
+                        val full = remember(fullPath) { decodeThumbnail(fullPath, 2048) }
+                        Dialog(onDismissRequest = { showFullPhoto = false }) {
+                            if (full != null) {
+                                Image(bitmap = full, contentDescription = null, contentScale = ContentScale.Fit)
+                            }
+                        }
                     }
                     if (wineName.isNotEmpty()) {
                         Text(wineName, style = MaterialTheme.typography.titleLarge)
