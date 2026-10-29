@@ -71,6 +71,8 @@ curl -X POST http://localhost:8787/scan -F photo=@label.jpg -F user=alex -F budd
 
 Hosted API: https://yourwine-api.jaac.workers.dev (try /health)
 
+Android: open `android/` in Android Studio (or run `cd android && ./gradlew assembleDebug`).
+
 ## Before the hackathon
 - Research on wine-taste profiling (four axes: acidity, sweetness, tannin, body).
 - A private dataset of Mexican supermarket wines. A **sample** is included in `data/` (facts only: name, grape, region, vintage, alcohol, and the four axes).

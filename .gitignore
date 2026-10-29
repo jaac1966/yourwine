@@ -10,3 +10,8 @@ build/
 *.log
 .DS_Store
 Thumbs.db
+android/.gradle/
+android/.gradle-home/
+android/local.properties
+
+android/.idea/
