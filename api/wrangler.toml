@@ -6,3 +6,8 @@ compatibility_date = "2026-10-28"
 binding = "USAGE"
 # create with: wrangler kv namespace create USAGE, then paste its id here
 id = "8a2474130f374d90834e24eed5441ea9"
+
+[observability.logs]
+enabled = true
+invocation_logs = true
+persist = true

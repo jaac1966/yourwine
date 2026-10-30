@@ -44,6 +44,7 @@ function metaOk(content: string) {
 beforeEach(() => {
   puts.length = 0;
   vi.spyOn(console, 'error').mockImplementation(() => {});
+  vi.spyOn(console, 'log').mockImplementation(() => {});
 });
 
 afterEach(() => {
@@ -128,6 +129,50 @@ describe('POST /scan', () => {
     expect(res.status).toBe(200);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect((await res.json()).readBy).toBe('spark');
+  });
+});
+
+describe('POST /transcribe', () => {
+  it('transcribes wav audio via Muse Voice Transcribe and tracks meta usage', async () => {
+    const fetchMock = mockMeta({ transcript: 'would I like this one', audioDurationMs: 7000 });
+    const bytes = new Uint8Array(64000);
+    const form = new FormData();
+    form.set('audio', new File([bytes], 'audio.wav', { type: 'audio/wav' }));
+    const res = await app.request('/transcribe', { method: 'POST', body: form }, env());
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ text: 'would I like this one' });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const calls = fetchMock.mock.calls as unknown as Array<[string, { body: FormData }]>;
+    expect(calls[0][0]).toBe('https://api.meta.ai/v1/asr/transcribe');
+    expect(console.log).toHaveBeenCalledTimes(1);
+    expect(console.log).toHaveBeenCalledWith('https://api.meta.ai/v1/asr/transcribe');
+    const sent = calls[0][1].body as FormData;
+    const partNames = Array.from(sent as unknown as Array<[string, unknown]>).map(([name]) => name);
+    expect(partNames).toEqual(['request', 'audio']);
+    expect(typeof sent.get('request')).toBe('string');
+    expect(JSON.parse(sent.get('request') as string)).toEqual({
+      mode: 'PUSH_TO_TALK',
+      model: 'muse-voice-transcribe-1.0',
+      audioEncoding: 'WAV',
+    });
+    const sentAudio = sent.get('audio');
+    expect(sentAudio).toBeInstanceOf(File);
+    expect((sentAudio as File).name).toBe('audio.wav');
+    expect((sentAudio as File).type).toBe('audio/wav');
+    expect(new Uint8Array(await (sentAudio as File).arrayBuffer())).toEqual(bytes);
+    const today = new Date().toISOString().slice(0, 10);
+    expect(puts).toEqual([[`usage:${today}:meta`, '7']]);
+  });
+
+  it('returns 502 with upstream status and excerpt when transcription fails', async () => {
+    mockMeta({ error: 'bad' }, 500);
+    const form = new FormData();
+    form.set('audio', new File([new Uint8Array([1, 2, 3])], 'audio.wav', { type: 'audio/wav' }));
+    const res = await app.request('/transcribe', { method: 'POST', body: form }, env());
+    expect(res.status).toBe(502);
+    expect(res.headers.get('x-upstream')).toBe('500 {"error":"bad"}');
+    expect(await res.json()).toEqual({ error: 'transcribe: 500 {"error":"bad"}' });
+    expect(puts).toEqual([]);
   });
 });
 

@@ -1,6 +1,8 @@
 # YourWine
 
-**Live demo:** _(URL pending — Cloudflare Pages)_
+**Live demo:** https://yourwine.net (coming Oct 30)
+
+**API:** https://api.yourwine.net (alternate: https://yourwine-api.jaac.workers.dev)
 
 **YourWine is an app for Meta Adventurer glasses that tells you whether you'll like a wine before you buy it — based on your own taste, not the crowd's.** It runs as an Android companion app for the glasses, with a web version so anyone can try it without hardware.
 
@@ -15,7 +17,7 @@ Choosing wine is a hands-busy, eyes-on-the-shelf moment. A phone app means putti
 YourWine is built for Meta Adventurer glasses from the ground up:
 
 - **Camera** reads the label — the bottle in your hand, not the twenty behind it.
-- **Microphone** takes the question ("would I like this?", "and Mary?").
+- **Microphone** takes the question ("would I like this?", "and my wife?").
 - **Speaker** gives the verdict and a one-breath explanation, so you never look at a screen.
 
 The phone stays in your pocket. It runs the companion Android app that bridges the glasses to the backend through Meta's Wearables Device Access Toolkit.
@@ -37,7 +39,7 @@ Meta Adventurer glasses ──photo + voice──▶ Android companion app (Kotl
    and infers the wine's profile    score vs. your taste profile   personal explanation (Baseten)
             └─────────────────────────────────┼──────────────────────────────┘
                                               ▼
-                       "78% for you. 91% for Mary." ──voice──▶ glasses
+                       "78% for you. 91% for your wife." ──voice──▶ glasses
 ```
 
 The score comes back first — it is arithmetic, not a model, so it is instant. The explanation follows a few seconds later as a second spoken message while you are still holding the bottle.
@@ -49,6 +51,9 @@ The score comes back first — it is arithmetic, not a model, so it is instant. 
 **It learns.** After you drink it: "loved it" or "not for me", by voice. The profile shifts and the next verdict changes.
 
 **It compares.** Point at two or three bottles: "which one should I take?" The answer names the one to grab, not a score per label.
+
+### How you start it today
+A tap on the phone starts listening (beep). "Hey Meta, start YourWine" voice invocation requires app registration with Meta's Developer Center and does not run in Developer Mode — it is the production path, not in this submission.
 
 ## Try the hosted demo in 2 minutes
 _(to be completed when the demo is deployed)_
@@ -69,28 +74,33 @@ npm test
 curl -X POST http://localhost:8787/scan -F photo=@label.jpg -F user=alex -F buddies=ana,luis
 ```
 
-Hosted API: https://yourwine-api.jaac.workers.dev (try /health)
+Hosted API: https://api.yourwine.net (alternate: https://yourwine-api.jaac.workers.dev, try /health)
 
 Android: open `android/` in Android Studio (or run `cd android && ./gradlew assembleDebug`).
 
 ## Before the hackathon
 - Research on wine-taste profiling (four axes: acidity, sweetness, tannin, body).
 - A private dataset of Mexican supermarket wines. A **sample** is included in `data/` (facts only: name, grape, region, vintage, alcohol, and the four axes).
+- Pre-existing dataset (sample). Factual fields only (name, grape, region, vintage, ABV) plus the four axes assigned by the author. Nothing copied from retailer or winery sites.
 - Test photos and videos of wine labels, taken by the author with Meta Adventurer glasses and a phone (`demo/labels/`).
 
 ## Built during the hackathon (Oct 27 – Nov 4, 2026)
 All code in this repository was written during the event.
 - **Oct 27** — Repo setup. Smoke tests against the Meta Model API and Baseten. First real label read from a glasses photo. See measurements below.
-- **Oct 28** — Cloudflare Worker with /scan, /explain, /feedback, /usage; 4AM color-aware score with tests; deployed.
+- **Oct 28** — Worker deployed, Android app, first real-glasses scan.
+- **Oct 29** — voice input (/transcribe + intents), HFP mic routing (MODE_IN_COMMUNICATION), domain yourwine.net, api.yourwine.net, Workers Logs, smoke_transcribe script.
 
 ## Meta tools used
 | Step | Tool |
 |---|---|
-| Capture (photo, voice in, voice out) | Meta Adventurer glasses via Wearables Device Access Toolkit |
-| Voice in | Muse Voice Transcribe |
+| Capture (photo) | Meta Adventurer glasses via Wearables Device Access Toolkit |
+| Voice in | Muse Voice Transcribe (POST /v1/asr/transcribe, PUSH_TO_TALK, 16 kHz WAV) |
+| Voice out | Android TextToSpeech (system voice, not a model) |
 | Read the label, infer the wine profile | Muse Spark 1.3 (Muse Wonder for low-confidence cases) |
 | Personal explanation | Muse Spark Open (`meta-models/muse-spark-open-1026`, Baseten) |
 | Compatibility score | deterministic algorithm, no model |
+
+Muse Voice Transcribe is speech-to-text only.
 
 ## Measurements log
 
@@ -103,6 +113,20 @@ All code in this repository was written during the event.
 | Muse Spark Open (Baseten) | same, `reasoning_effort: low` | 3.1 s | 304 | 763 | good text, kept |
 
 Takeaways: both models spend most output tokens on reasoning, so `max_tokens` must be 2,000 or more or the answer comes back empty. Photo size drives Spark cost and latency: resize to about 1024 px before sending. Score is deterministic and instant; the explanation arrives as a second message.
+
+### Oct 28, 23:01 — first full scan on real Meta Adventurer
+LARGE capture 155 KB HEIC, capture+transfer 5.5 s, /scan ~4 s, /explain ~4 s, Ask→spoken verdict ~10 s.
+
+### Oct 30, 00:44 — first end-to-end voice flow on real glasses
+HFP mic (Meta Glasses 05N2), 4.2 s recording (1.0 s speech, 92.8 KB WAV), /transcribe 1.5 s (200), capture ~11 s, /scan 4.6 s, /explain 4.7 s, Ask→verdict ~23 s. Heard "goal I like this" for "would I like this"; keyword intents still routed correctly.
+
+Note: next step is capturing the photo in parallel with transcription.
+
+## Troubleshooting
+- Meta AI answering instead of the app → fixed by setting MODE_IN_COMMUNICATION before the SCO device.
+- Glasses deliver HEIC → normalized to JPEG on the phone.
+- First createSession fails → retried after 2 s.
+- Recording cut before speech → beep + speech-gated silence detection.
 
 ## License
 This repository is **source-available**, not open source. See `LICENSE` (PolyForm Noncommercial 1.0.0): you may view, run and evaluate the code; commercial use requires permission.

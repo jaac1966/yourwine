@@ -173,6 +173,49 @@ Refer to wines by grape and country only, never by brand. Speak about *their* ta
   return c.json({ text: data?.choices?.[0]?.message?.content ?? '' });
 });
 
+app.post('/transcribe', async (c) => {
+  let audio: File | null = null;
+  try {
+    const form = await c.req.formData();
+    const a = form.get('audio');
+    if (a instanceof File) audio = a;
+  } catch {
+    audio = null;
+  }
+  if (!audio) return c.json({ error: 'audio required' }, 400);
+  const wavBytes = await audio.arrayBuffer();
+  const upstream = new FormData();
+  upstream.append('request', JSON.stringify({ mode: 'PUSH_TO_TALK', model: 'muse-voice-transcribe-1.0', audioEncoding: 'WAV' }));
+  upstream.append('audio', new Blob([wavBytes], { type: 'audio/wav' }), 'audio.wav');
+  const url = 'https://api.meta.ai/v1/asr/transcribe';
+  console.log(url);
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${c.env.META_API_KEY}` },
+      body: upstream,
+    });
+  } catch (e) {
+    console.error(e);
+    return c.json({ error: 'transcribe: fetch failed' }, 502);
+  }
+  if (!res.ok) {
+    const excerpt = (await res.text()).slice(0, 300);
+    console.error(res.status, excerpt);
+    const upstream = `${res.status} ${excerpt}`.replace(/[\r\n]+/g, ' ').slice(0, 200);
+    return c.json({ error: `transcribe: ${res.status} ${excerpt}` }, 502, { 'x-upstream': upstream });
+  }
+  const data = (await res.json()) as {
+    transcript?: string;
+    audioDurationMs?: number;
+  };
+  const seconds = Number(data?.audioDurationMs) / 1000;
+  const estimated = Math.max(1, Math.round(audio.size / 32000));
+  await trackUsage(c.env, 'meta', Number.isFinite(seconds) && seconds > 0 ? seconds : estimated);
+  return c.json({ text: data?.transcript ?? '' });
+});
+
 app.post('/feedback', async (c) => {
   const { user, wine, verdict } = await c.req.json();
   if (!profiles[user]) return c.json({ error: `unknown user: ${user}` }, 404);
