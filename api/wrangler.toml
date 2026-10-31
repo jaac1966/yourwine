@@ -7,6 +7,12 @@ binding = "USAGE"
 # create with: wrangler kv namespace create USAGE, then paste its id here
 id = "8a2474130f374d90834e24eed5441ea9"
 
+[[d1_databases]]
+binding = "DB"
+database_name = "yourwine-db"
+database_id = "b2425aa7-8a69-4f48-82f2-512b1c0704b9"
+migrations_dir = "migrations"
+
 [observability.logs]
 enabled = true
 invocation_logs = true

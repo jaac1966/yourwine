@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "predev": "wrangler d1 migrations apply yourwine-db --local",
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "test": "vitest run"

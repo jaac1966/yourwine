@@ -1,7 +1,11 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { applyFeedback, fourAxisMatch, type Profile } from './fourAxisMatch';
-import profilesData from '../data/profiles.json';
+import { applyFeedback, fourAxisMatch, type Color, type Profile } from './fourAxisMatch';
+import {
+  getProfile, getScan, getWine, insertScan, resetDemo, saveProfile, scanStats,
+  seedProfilesIfEmpty, setScanFeedback, upsertWine, type D1, type NewWine,
+} from './db';
+import { wineId } from './wineId';
 
 type KV = {
   get(key: string): Promise<string | null>;
@@ -10,6 +14,7 @@ type KV = {
 
 type Env = {
   USAGE: KV;
+  DB: D1;
   META_API_KEY: string;
   BASETEN_API_KEY: string;
 };
@@ -21,7 +26,22 @@ app.onError((err, c) => {
   console.error(err);
   return c.text('Internal Server Error', 500);
 });
-const profiles = profilesData as unknown as Record<string, Profile>;
+type LabelWine = {
+  producer?: string;
+  winery?: string;
+  name: string;
+  vintage?: number | null;
+  region?: string;
+  country?: string;
+  grapes?: string[];
+  alcohol?: number | null;
+  color: Color;
+  acidity: number;
+  sweetness: number;
+  tannin: number;
+  body: number;
+  confidence?: number;
+};
 
 const labelSchema = {
   name: 'wine_label',
@@ -29,7 +49,7 @@ const labelSchema = {
     type: 'object',
     properties: {
       name: { type: 'string' },
-      winery: { type: 'string' },
+      producer: { type: 'string' },
       country: { type: 'string' },
       region: { type: 'string' },
       grapes: { type: 'array', items: { type: 'string' } },
@@ -122,27 +142,61 @@ app.post('/scan', async (c) => {
     buddies = typeof b === 'string' ? b : '';
   }
   const ids = [user, ...(buddies ? buddies.split(',').map((s) => s.trim()).filter(Boolean) : [])];
+  await seedProfilesIfEmpty(c.env.DB);
+  const profiles: Record<string, Profile> = {};
   for (const id of ids) {
-    if (!profiles[id]) return c.json({ error: `unknown user: ${id}` }, 404);
+    const stored = await getProfile(c.env.DB, id);
+    if (!stored) return c.json({ error: `unknown user: ${id}` }, 404);
+    profiles[id] = stored.profile;
   }
+  const t0 = Date.now();
   const spark = await readLabel(c.env.META_API_KEY, 'muse-spark-1.3', mime, b64);
   if (!spark) return c.json({ error: 'label read failed' }, 502);
   await trackUsage(c.env, 'meta', spark.tokens);
   if (!spark.wine?.color) return c.json({ error: 'could not read label' }, 502);
-  let wine = spark.wine;
-  let readBy: 'spark' | 'wonder' = 'spark';
-  if ((wine.confidence ?? 1) < 0.7) {
-    const wonder = await readLabel(c.env.META_API_KEY, 'muse-wonder-1.0', mime, b64);
-    if (wonder) {
-      await trackUsage(c.env, 'meta', wonder.tokens);
-      if (wonder.wine?.color && (wonder.wine.confidence ?? 0) > (wine.confidence ?? 0)) {
-        wine = wonder.wine;
-        readBy = 'wonder';
+  const sparkWine = spark.wine as LabelWine;
+  const producerOf = (w: LabelWine) => w.producer ?? w.winery ?? '';
+  const stored = await getWine(c.env.DB, wineId(producerOf(sparkWine), sparkWine.name, sparkWine.vintage ?? null));
+  let wine: LabelWine;
+  let readBy: string;
+  let cacheHit: number;
+  let id: string;
+  if (stored) {
+    wine = { ...sparkWine, color: stored.color, acidity: stored.acidity, sweetness: stored.sweetness, tannin: stored.tannin, body: stored.body };
+    readBy = stored.source;
+    cacheHit = 1;
+    id = stored.id;
+    await upsertWine(c.env.DB, stored);
+  } else {
+    wine = sparkWine;
+    readBy = 'spark';
+    if ((wine.confidence ?? 1) < 0.7) {
+      const wonder = await readLabel(c.env.META_API_KEY, 'muse-wonder-1.0', mime, b64);
+      if (wonder) {
+        await trackUsage(c.env, 'meta', wonder.tokens);
+        if (wonder.wine?.color && (wonder.wine.confidence ?? 0) > (wine.confidence ?? 0)) {
+          wine = wonder.wine as LabelWine;
+          readBy = 'wonder';
+        }
       }
     }
+    id = wineId(producerOf(wine), wine.name, wine.vintage ?? null);
+    const row: NewWine = {
+      id, producer: producerOf(wine) || null, name: wine.name, vintage: wine.vintage ?? null,
+      region: wine.region ?? null, country: wine.country ?? null,
+      grapes: Array.isArray(wine.grapes) ? wine.grapes : null, abv: wine.alcohol ?? null,
+      color: wine.color, acidity: wine.acidity, sweetness: wine.sweetness, tannin: wine.tannin, body: wine.body,
+      source: readBy, confidence: wine.confidence ?? null,
+    };
+    await upsertWine(c.env.DB, row);
+    cacheHit = 0;
   }
-  const matches = ids.map((id) => ({ user: id, score: fourAxisMatch(profiles[id], wine) }));
-  return c.json({ wine, matches, readBy });
+  const matches = ids.map((uid) => ({ user: uid, score: fourAxisMatch(profiles[uid], wine) }));
+  const scanId = await insertScan(c.env.DB, {
+    userId: user, wineId: id, score: matches[0].score, buddies: buddies || null,
+    cacheHit, readBy, latencyMs: Date.now() - t0,
+  });
+  return c.json({ wine, matches, readBy, read_by: readBy, scan_id: scanId, cache_hit: cacheHit });
 });
 
 app.post('/explain', async (c) => {
@@ -217,12 +271,30 @@ app.post('/transcribe', async (c) => {
 });
 
 app.post('/feedback', async (c) => {
-  const { user, wine, verdict } = await c.req.json();
-  if (!profiles[user]) return c.json({ error: `unknown user: ${user}` }, 404);
+  const { scan_id, verdict } = await c.req.json();
   if (verdict !== 'loved' && verdict !== 'not_for_me') {
     return c.json({ error: 'verdict must be loved or not_for_me' }, 400);
   }
-  return c.json(applyFeedback(profiles[user], wine, verdict));
+  if (scan_id == null) return c.json({ error: 'scan_id required' }, 400);
+  const scan = await getScan(c.env.DB, scan_id);
+  if (!scan) return c.json({ error: `unknown scan: ${scan_id}` }, 404);
+  const stored = await getProfile(c.env.DB, scan.userId);
+  if (!stored) return c.json({ error: `unknown user: ${scan.userId}` }, 404);
+  const wine = await getWine(c.env.DB, scan.wineId);
+  if (!wine) return c.json({ error: `unknown wine: ${scan.wineId}` }, 404);
+  const updated = applyFeedback(
+    stored.profile,
+    { color: wine.color, acidity: wine.acidity, sweetness: wine.sweetness, tannin: wine.tannin, body: wine.body },
+    verdict,
+  );
+  await saveProfile(c.env.DB, scan.userId, stored.displayName, updated);
+  await setScanFeedback(c.env.DB, scan.id, verdict);
+  return c.json(updated);
+});
+
+app.post('/reset', async (c) => {
+  await resetDemo(c.env.DB);
+  return c.json({ ok: true });
 });
 
 app.get('/usage', async (c) => {
@@ -231,7 +303,8 @@ app.get('/usage', async (c) => {
     c.env.USAGE.get(`usage:${day}:meta`),
     c.env.USAGE.get(`usage:${day}:baseten`),
   ]);
-  return c.json({ date: day, meta: Number(meta ?? 0), baseten: Number(baseten ?? 0) });
+  const stats = await scanStats(c.env.DB, day);
+  return c.json({ date: day, meta: Number(meta ?? 0), baseten: Number(baseten ?? 0), scans: stats.scans, cache_hits: stats.cacheHits });
 });
 
 export default app;

@@ -102,6 +102,18 @@ All code in this repository was written during the event.
 
 Muse Voice Transcribe is speech-to-text only.
 
+## Data
+Scans and profiles live in Cloudflare D1 (`yourwine-db`):
+- **wines** — label facts (producer, name, vintage, region, country, grapes, ABV, color) plus the four taste axes, source (`seed`, `spark` or `wonder`) and scan count.
+- **profiles** — one row per user: base axes plus the per-color overlays that feedback moves.
+- **scans** — one row per scan: user, wine, score, buddies, cache hit, reader, latency and feedback.
+
+What is not stored: the photo is never saved — it is sent to the label model and discarded.
+
+Judges: `POST /reset` restores the demo (re-seeds profiles, clears scans, keeps wines).
+
+A repeat scan still calls Spark to identify the bottle; the cache saves the Wonder escalation and keeps scores consistent.
+
 ## Measurements log
 
 ### Oct 27 — first calls, Windows laptop, Querétaro

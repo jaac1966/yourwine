@@ -6,6 +6,7 @@
   "engines": { "node": ">=20.6" },
   "scripts": {
     "smoke:meta": "node --env-file=.env scripts/smoke_meta.mjs",
-    "smoke:baseten": "node --env-file=.env scripts/smoke_baseten.mjs"
+    "smoke:baseten": "node --env-file=.env scripts/smoke_baseten.mjs",
+    "demo:learn": "node scripts/demo_learn.mjs"
   }
 }
