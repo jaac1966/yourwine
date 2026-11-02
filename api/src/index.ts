@@ -81,6 +81,43 @@ const EXPLAIN_SYSTEM =
 
 const EXPLAIN_AXES: (keyof Axes)[] = ['acidity', 'sweetness', 'tannin', 'body'];
 
+// Preferred axis when |delta| values are within 0.25 of each other.
+const AXIS_PRIORITY: (keyof Axes)[] = ['tannin', 'acidity', 'body', 'sweetness'];
+
+function selectAxis(d: Axes, want: 'largest' | 'smallest'): { axis: keyof Axes; delta: number } {
+  let extreme = want === 'largest' ? -Infinity : Infinity;
+  for (const k of EXPLAIN_AXES) {
+    const a = Math.abs(d[k]);
+    extreme = want === 'largest' ? Math.max(extreme, a) : Math.min(extreme, a);
+  }
+  let best: keyof Axes = EXPLAIN_AXES[0];
+  for (const k of AXIS_PRIORITY) {
+    if (Math.abs(Math.abs(d[k]) - extreme) <= 0.25) {
+      best = k;
+      break;
+    }
+  }
+  return { axis: best, delta: d[best] };
+}
+
+type Magnitude = 'slightly' | 'noticeably' | 'much';
+
+function magnitudeFor(absDelta: number): Magnitude {
+  if (absDelta < 0.75) return 'slightly';
+  if (absDelta < 1.5) return 'noticeably';
+  return 'much';
+}
+
+type AxisPick = { axis: keyof Axes; delta: number; magnitude: Magnitude; direction: 'higher' | 'lower' };
+
+function annotatePick(sel: { axis: keyof Axes; delta: number }): AxisPick {
+  return {
+    ...sel,
+    magnitude: magnitudeFor(Math.abs(sel.delta)),
+    direction: sel.delta >= 0 ? 'higher' : 'lower',
+  };
+}
+
 function axisValue(o: unknown, k: keyof Axes): number {
   const v = Number((o as Record<string, unknown> | null | undefined)?.[k]);
   return Number.isFinite(v) ? v : 3;
@@ -101,8 +138,8 @@ type ExplainFacts = {
   profile: Axes;
   wine: Axes;
   delta: Axes;
-  furthest: { axis: keyof Axes; delta: number };
-  closest: { axis: keyof Axes; delta: number };
+  furthest: AxisPick;
+  closest: AxisPick;
   grapes: string[];
   country: string;
 };
@@ -118,12 +155,8 @@ function explainFacts(wine: unknown, profile: unknown, score: unknown): ExplainF
     w[k] = axisValue(wine, k);
     d[k] = w[k] - p[k];
   }
-  let furthest = { axis: EXPLAIN_AXES[0], delta: d[EXPLAIN_AXES[0]] };
-  let closest = { axis: EXPLAIN_AXES[0], delta: d[EXPLAIN_AXES[0]] };
-  for (const k of EXPLAIN_AXES) {
-    if (Math.abs(d[k]) > Math.abs(furthest.delta)) furthest = { axis: k, delta: d[k] };
-    if (Math.abs(d[k]) < Math.abs(closest.delta)) closest = { axis: k, delta: d[k] };
-  }
+  const furthest = annotatePick(selectAxis(d, 'largest'));
+  const closest = annotatePick(selectAxis(d, 'smallest'));
   const rec = (wine ?? {}) as { grapes?: unknown; country?: unknown };
   return {
     score: clamped,
@@ -166,6 +199,7 @@ function explainUserMessage(f: ExplainFacts, lastLoved: unknown): string {
     JSON.stringify(facts) +
     '\n\n' +
     tail +
+    ' Describe the degree with the given magnitude word; do not invent your own degree words.' +
     ' Write the two sentences.'
   );
 }
@@ -178,12 +212,8 @@ const FIRST_SENTENCE: Record<VerdictLabel, string> = {
 };
 
 function templateExplanation(f: ExplainFacts): string {
-  const high = f.score >= 60;
-  const axis = high ? f.closest.axis : f.furthest.axis;
-  const second = high
-    ? `Its ${axis} is the closest to your usual taste.`
-    : `Its ${axis} is the furthest from your usual taste.`;
-  return `${FIRST_SENTENCE[f.verdict]} ${second}`;
+  const pick = f.score >= 60 ? f.closest : f.furthest;
+  return `${FIRST_SENTENCE[f.verdict]} Its ${pick.axis} is ${pick.magnitude} ${pick.direction} than your usual taste.`;
 }
 
 function toBase64(buf: ArrayBuffer): string {

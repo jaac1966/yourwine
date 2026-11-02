@@ -40,12 +40,17 @@ export function fourAxisMatch(profile: Profile, wine: Wine): number {
   return Math.round(100 * (1 - diff / total));
 }
 
+export function learningStep(n: number): number {
+  return Math.max(0.15, 0.45 / (1 + 0.5 * n));
+}
+
 export function applyFeedback(profile: Profile, wine: Wine, verdict: Verdict): Profile {
   const overlay = overlayFor(profile, wine.color);
+  const step = learningStep(overlay.n);
   const dir = verdict === 'loved' ? 1 : -1;
   for (const k of AXES) {
     const d = wine[k] - overlay.axes[k];
-    if (d !== 0) overlay.axes[k] = Math.min(5, Math.max(1, overlay.axes[k] + dir * Math.sign(d) * 0.5));
+    overlay.axes[k] = Math.min(5, Math.max(1, overlay.axes[k] + dir * d * step));
   }
   overlay.n += 1;
   return profile;

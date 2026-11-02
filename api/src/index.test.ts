@@ -180,13 +180,19 @@ describe('POST /feedback', () => {
     const { scan_id } = await scan.json();
     const first = await postJson('/feedback', { scan_id, verdict: 'loved' }, db);
     expect(first.status).toBe(200);
-    expect(await first.json()).toMatchObject({
-      red: { axes: { acidity: 2.5, sweetness: 1.5, tannin: 4.5, body: 4.5 }, n: 1 },
-    });
+    const a = (await first.json()).red;
+    expect(a.n).toBe(1);
+    expect(a.axes.acidity).toBeCloseTo(3.35, 8);
+    expect(a.axes.sweetness).toBeCloseTo(1.55, 8);
+    expect(a.axes.tannin).toBeCloseTo(4.45, 8);
+    expect(a.axes.body).toBeCloseTo(4.45, 8);
     const second = await postJson('/feedback', { scan_id, verdict: 'loved' }, db);
-    expect(await second.json()).toMatchObject({
-      red: { axes: { acidity: 3, sweetness: 1, tannin: 5, body: 5 }, n: 2 },
-    });
+    const b = (await second.json()).red;
+    expect(b.n).toBe(2);
+    expect(b.axes.acidity).toBeCloseTo(3.845, 8);
+    expect(b.axes.sweetness).toBeCloseTo(1.385, 8);
+    expect(b.axes.tannin).toBeCloseTo(4.615, 8);
+    expect(b.axes.body).toBeCloseTo(4.615, 8);
   });
 
   it('caps overlays at 1 and 5', async () => {
@@ -320,7 +326,48 @@ describe('POST /explain', () => {
     expect(sent.messages[1].content).toContain('"delta_wine_minus_profile":{"acidity":1,"sweetness":-2,"tannin":2,"body":1}');
     expect(sent.messages[1].content).toContain('"last_loved":{"grape":"Zinfandel","country":"USA"}');
     expect(sent.messages[1].content).toContain('you may mention the wine the user last loved in sentence 2');
+    expect(sent.messages[1].content).toContain(
+      '"furthest":{"axis":"tannin","delta":2,"magnitude":"much","direction":"higher"}',
+    );
+    expect(sent.messages[1].content).toContain(
+      '"closest":{"axis":"acidity","delta":1,"magnitude":"noticeably","direction":"higher"}',
+    );
+    expect(sent.messages[1].content).toContain('given magnitude word');
     expect(console.warn).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    {
+      name: 'largest delta',
+      score: 35,
+      profile: { acidity: 2, sweetness: 1.9, tannin: 3, body: 3 },
+      wine: { acidity: 3.9, sweetness: 1, tannin: 3, body: 3 },
+      axis: 'acidity',
+      magnitude: 'much',
+    },
+    {
+      name: 'tie prefers tannin',
+      score: 35,
+      profile: { acidity: 2, sweetness: 4, tannin: 2, body: 3 },
+      wine: { acidity: 3.9, sweetness: 4, tannin: 3.8, body: 3 },
+      axis: 'tannin',
+      magnitude: 'much',
+    },
+  ])('template names the $axis axis ($name)', async ({ score, profile, wine, axis, magnitude }) => {
+    const fetchMock = vi.fn(async () => new Response('{}', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const res = await explain(env(createFakeDb(), { BASETEN_API_KEY: '' }), {
+      ...body,
+      score,
+      profile,
+      wine: { ...body.wine, ...wine },
+    });
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    const second = String(data.text).split('. ')[1];
+    expect(second).toContain(axis);
+    expect(second).toContain(magnitude);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('omits last_loved from the prompt when null', async () => {

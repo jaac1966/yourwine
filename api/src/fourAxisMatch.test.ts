@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyFeedback, fourAxisMatch, type Axes, type Profile } from './fourAxisMatch';
+import { applyFeedback, fourAxisMatch, learningStep, type Axes, type Profile } from './fourAxisMatch';
 
 const axes = (acidity: number, sweetness: number, tannin: number, body: number): Axes => ({
   acidity,
@@ -47,19 +47,40 @@ describe('fourAxisMatch', () => {
   });
 });
 
+const expectAxesCloseTo = (got: Axes, want: Axes) => {
+  for (const k of ['acidity', 'sweetness', 'tannin', 'body'] as const) {
+    expect(got[k]).toBeCloseTo(want[k], 8);
+  }
+};
+
+describe('learningStep', () => {
+  it('starts at 0.45, decays, and never goes below 0.15', () => {
+    expect(learningStep(0)).toBeCloseTo(0.45, 8);
+    expect(learningStep(4)).toBeCloseTo(0.15, 8);
+    expect(learningStep(100)).toBe(0.15);
+  });
+});
+
 describe('applyFeedback', () => {
-  it('moves axes toward the wine on loved and increments n', () => {
+  it('moves 45% of the distance toward the wine on the first loved and increments n', () => {
     const p = profile(axes(3, 3, 3, 3), axes(3, 3, 3, 3), 0);
     const updated = applyFeedback(p, { ...axes(5, 4, 1, 5), color: 'white' }, 'loved');
-    expect(updated.white.axes).toEqual(axes(3.5, 3.5, 2.5, 3.5));
+    expectAxesCloseTo(updated.white.axes, axes(3.9, 3.45, 2.1, 3.9));
     expect(updated.white.n).toBe(1);
   });
 
   it('moves axes away from the wine on not_for_me and increments n', () => {
     const p = profile(axes(3, 3, 3, 3), axes(3, 3, 3, 3), 0);
     const updated = applyFeedback(p, { ...axes(5, 4, 1, 5), color: 'white' }, 'not_for_me');
-    expect(updated.white.axes).toEqual(axes(2.5, 2.5, 3.5, 2.5));
+    expectAxesCloseTo(updated.white.axes, axes(2.1, 2.55, 3.9, 2.1));
     expect(updated.white.n).toBe(1);
+  });
+
+  it('moves profile 2/2/4/4 toward wine 4/1/2/2 on the first loved', () => {
+    const p = profile(axes(2, 2, 4, 4));
+    const updated = applyFeedback(p, { ...axes(4, 1, 2, 2), color: 'red' }, 'loved');
+    expectAxesCloseTo(updated.red.axes, axes(2.9, 1.55, 3.1, 3.1));
+    expect(updated.red.n).toBe(1);
   });
 
   it('clamps axes to 1-5', () => {
