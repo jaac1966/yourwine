@@ -296,93 +296,82 @@ describe('POST /transcribe', () => {
 
 describe('POST /explain', () => {
   const body = {
-    wine: { name: 'Test Red', country: 'Mexico', color: 'red' },
-    profile: { red: { axes: { acidity: 3, sweetness: 2, tannin: 4, body: 4 }, n: 0 } },
+    wine: { name: 'Test Red', country: 'Mexico', color: 'red', acidity: 3, sweetness: 2, tannin: 4, body: 4 },
+    profile: { acidity: 2, sweetness: 4, tannin: 2, body: 3 },
     score: 78,
     lastLoved: { grape: 'Zinfandel', country: 'USA' },
   };
-  const explain = (e: ReturnType<typeof env>) =>
-    app.request('/explain', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }, e);
+  const explain = (e: ReturnType<typeof env>, b: object = body) =>
+    app.request('/explain', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(b) }, e);
   const explainOk = (text: string) => ({ usage: { total_tokens: 10 }, choices: [{ message: { content: text } }] });
 
-  it('uses Baseten and reports spark-open-baseten when BASETEN_API_KEY is set', async () => {
-    const fetchMock = mockMeta(explainOk('You will love it.'));
+  it('uses Baseten with the verdict as ground truth when BASETEN_API_KEY is set', async () => {
+    const fetchMock = mockMeta(explainOk('You will love it. It is great.'));
     const res = await explain(env());
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ text: 'You will love it.', explained_by: 'spark-open-baseten' });
+    expect(await res.json()).toEqual({ text: 'You will love it. It is great.', explained_by: 'spark-open-baseten' });
     expect(fetchMock.mock.calls[0][0]).toBe('https://inference.baseten.co/v1/chat/completions');
-    expect(JSON.parse(fetchMock.mock.calls[0][1].body).max_tokens).toBe(2000);
+    const sent = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(sent.max_tokens).toBe(2000);
+    expect(sent.reasoning_effort).toBe('low');
+    expect(sent.messages[0]).toMatchObject({ role: 'system' });
+    expect(sent.messages[0].content).toContain('never contradict it');
+    expect(sent.messages[1].content).toContain('"verdict":"likely match"');
+    expect(sent.messages[1].content).toContain('"delta_wine_minus_profile":{"acidity":1,"sweetness":-2,"tannin":2,"body":1}');
+    expect(sent.messages[1].content).toContain('"last_loved":{"grape":"Zinfandel","country":"USA"}');
+    expect(sent.messages[1].content).toContain('you may mention the wine the user last loved in sentence 2');
     expect(console.warn).not.toHaveBeenCalled();
   });
 
-  it('sends max_tokens 4000, low reasoning effort, and the tightened prompt on the Meta fallback', async () => {
-    const fetchMock = mockMeta(explainOk('You will love it.'));
-    const res = await explain(env(createFakeDb(), { BASETEN_API_KEY: '' }));
+  it('omits last_loved from the prompt when null', async () => {
+    const fetchMock = mockMeta(explainOk('ok. Fine.'));
+    const res = await explain(env(), { ...body, lastLoved: null });
     expect(res.status).toBe(200);
     const sent = JSON.parse(fetchMock.mock.calls[0][1].body);
-    expect(sent.max_tokens).toBe(4000);
-    expect(sent.reasoning_effort).toBe('low');
-    expect(sent.messages[0].content).toContain('Answer with exactly two short sentences, no preamble, no markdown.');
+    expect(sent.messages[1].content).not.toContain('last_loved');
+    expect(sent.messages[1].content).not.toContain('you may mention');
   });
 
   it.each([['missing', undefined], ['empty', '']])(
-    'falls back to muse-spark-1.3 via Meta when BASETEN_API_KEY is %s',
+    'uses the local template without calling any model when BASETEN_API_KEY is %s',
     async (_label, key) => {
-      const fetchMock = mockMeta(explainOk('You will love it.'));
+      const fetchMock = vi.fn(async () => new Response('{}', { status: 200 }));
+      vi.stubGlobal('fetch', fetchMock);
       const res = await explain(env(createFakeDb(), { BASETEN_API_KEY: key }));
       expect(res.status).toBe(200);
-      expect(await res.json()).toEqual({ text: 'You will love it.', explained_by: 'spark-meta' });
-      expect(fetchMock.mock.calls[0][0]).toBe('https://api.meta.ai/v1/chat/completions');
-      expect(JSON.parse(fetchMock.mock.calls[0][1].body).model).toBe('muse-spark-1.3');
+      const data = await res.json();
+      expect(data.explained_by).toBe('template');
+      expect(data.text).toContain('likely match');
+      expect(String(data.text).split('. ')).toHaveLength(2);
+      expect(fetchMock).not.toHaveBeenCalled();
       expect(console.warn).toHaveBeenCalledTimes(1);
     },
   );
 
-  it('retries once when Meta returns empty content, then succeeds', async () => {
-    const empty = { usage: { total_tokens: 10 }, choices: [{ message: { content: null }, finish_reason: 'stop' }] };
-    const fetchMock = mockMetaSequence(empty, explainOk('You will love it.'));
-    const res = await explain(env(createFakeDb(), { BASETEN_API_KEY: '' }));
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ text: 'You will love it.', explained_by: 'spark-meta' });
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(console.error).toHaveBeenCalledTimes(1);
-    expect(String(vi.mocked(console.error).mock.calls[0][1])).toContain('finish_reason');
-  });
-
-  it('returns 502 with the provider finish_reason when Meta content stays empty', async () => {
-    const empty = (reason: string) => ({
-      usage: { total_tokens: 10 }, choices: [{ message: { content: null }, finish_reason: reason }],
+  it.each([
+    {
+      score: 98,
+      wine: { acidity: 2, sweetness: 4, tannin: 3, body: 3 },
+      words: ['love', 'strong match'],
+    },
+    {
+      score: 35,
+      wine: { acidity: 2, sweetness: 1, tannin: 2, body: 3 },
+      words: ["won't", 'unlikely match'],
+    },
+  ])('template first sentence matches the verdict for score $score', async ({ score, wine, words }) => {
+    const fetchMock = vi.fn(async () => new Response('{}', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const res = await explain(env(createFakeDb(), { BASETEN_API_KEY: '' }), {
+      ...body,
+      score,
+      wine: { ...body.wine, ...wine },
     });
-    const fetchMock = mockMetaSequence(empty('length'), empty('length'));
-    const res = await explain(env(createFakeDb(), { BASETEN_API_KEY: '' }));
-    expect(res.status).toBe(502);
-    expect(await res.json()).toEqual({ error: 'explanation failed', finish_reason: 'length' });
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(console.error).toHaveBeenCalledTimes(1);
-  });
-
-  it('joins array content parts from Meta', async () => {
-    const parts = {
-      usage: { total_tokens: 10 },
-      choices: [{ message: { content: [{ type: 'text', text: 'You will' }, { type: 'text', text: ' love it.' }] } }],
-    };
-    const fetchMock = mockMeta(parts);
-    const res = await explain(env(createFakeDb(), { BASETEN_API_KEY: '' }));
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ text: 'You will love it.', explained_by: 'spark-meta' });
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(console.error).not.toHaveBeenCalled();
-  });
-
-  it('sends the same prompt on both paths', async () => {
-    const prompts: string[] = [];
-    for (const e of [env(), env(createFakeDb(), { BASETEN_API_KEY: '' })]) {
-      const fetchMock = mockMeta(explainOk('ok'));
-      await explain(e);
-      prompts.push(JSON.parse(fetchMock.mock.calls[0][1].body).messages[0].content);
-    }
-    expect(prompts[0]).toBe(prompts[1]);
-    expect(prompts[0]).toContain('Compatibility score (already computed): 78%');
+    const data = await res.json();
+    const first = String(data.text).split('. ')[0];
+    for (const w of words) expect(first).toContain(w);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
 

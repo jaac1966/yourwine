@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { applyFeedback, fourAxisMatch, type Color, type Profile } from './fourAxisMatch';
+import { applyFeedback, fourAxisMatch, type Axes, type Color, type Profile } from './fourAxisMatch';
 import {
   getProfile, getScan, getWine, insertScan, resetDemo, saveProfile, scanStats,
   seedProfilesIfEmpty, setScanFeedback, upsertWine, type D1, type NewWine,
@@ -73,22 +73,117 @@ async function trackUsage(env: Env, provider: 'meta' | 'baseten', tokens: number
   await env.USAGE.put(key, String(current + tokens));
 }
 
-type ChatChoice = {
-  message?: { content?: unknown };
-  text?: unknown;
-  finish_reason?: unknown;
+const EXPLAIN_SYSTEM =
+  'The match score is already computed and is final. Write exactly two sentences in plain English for a shopper. ' +
+  'Sentence 1 states the verdict consistent with the score (never contradict it). ' +
+  'Sentence 2 names the one axis that most explains the score: if score >= 60, the axis closest to the profile; ' +
+  "if < 60, the axis furthest from it. Do not mention numbers or the word 'axis'. Do not recommend other wines.";
+
+const EXPLAIN_AXES: (keyof Axes)[] = ['acidity', 'sweetness', 'tannin', 'body'];
+
+function axisValue(o: unknown, k: keyof Axes): number {
+  const v = Number((o as Record<string, unknown> | null | undefined)?.[k]);
+  return Number.isFinite(v) ? v : 3;
+}
+
+type VerdictLabel = 'strong match' | 'likely match' | 'mixed' | 'unlikely match';
+
+function verdictFor(score: number): VerdictLabel {
+  if (score >= 80) return 'strong match';
+  if (score >= 60) return 'likely match';
+  if (score >= 40) return 'mixed';
+  return 'unlikely match';
+}
+
+type ExplainFacts = {
+  score: number;
+  verdict: VerdictLabel;
+  profile: Axes;
+  wine: Axes;
+  delta: Axes;
+  furthest: { axis: keyof Axes; delta: number };
+  closest: { axis: keyof Axes; delta: number };
+  grapes: string[];
+  country: string;
 };
 
-function chatText(choice: ChatChoice | undefined): string {
-  const content = choice?.message?.content;
-  if (typeof content === 'string') return content;
-  if (Array.isArray(content)) {
-    return content
-      .map((p) => (typeof p === 'string' ? p : (p as { text?: unknown })?.text))
-      .filter((t): t is string => typeof t === 'string')
-      .join('');
+function explainFacts(wine: unknown, profile: unknown, score: unknown): ExplainFacts {
+  const raw = Number(score);
+  const clamped = Number.isFinite(raw) ? Math.max(0, Math.min(100, Math.round(raw))) : 50;
+  const p = {} as Axes;
+  const w = {} as Axes;
+  const d = {} as Axes;
+  for (const k of EXPLAIN_AXES) {
+    p[k] = axisValue(profile, k);
+    w[k] = axisValue(wine, k);
+    d[k] = w[k] - p[k];
   }
-  return typeof choice?.text === 'string' ? choice.text : '';
+  let furthest = { axis: EXPLAIN_AXES[0], delta: d[EXPLAIN_AXES[0]] };
+  let closest = { axis: EXPLAIN_AXES[0], delta: d[EXPLAIN_AXES[0]] };
+  for (const k of EXPLAIN_AXES) {
+    if (Math.abs(d[k]) > Math.abs(furthest.delta)) furthest = { axis: k, delta: d[k] };
+    if (Math.abs(d[k]) < Math.abs(closest.delta)) closest = { axis: k, delta: d[k] };
+  }
+  const rec = (wine ?? {}) as { grapes?: unknown; country?: unknown };
+  return {
+    score: clamped,
+    verdict: verdictFor(clamped),
+    profile: p,
+    wine: w,
+    delta: d,
+    furthest,
+    closest,
+    grapes: Array.isArray(rec.grapes) ? rec.grapes.filter((g): g is string => typeof g === 'string') : [],
+    country: typeof rec.country === 'string' ? rec.country : '',
+  };
+}
+
+function explainUserMessage(f: ExplainFacts, lastLoved: unknown): string {
+  const facts: Record<string, unknown> = {
+    score: f.score,
+    verdict: f.verdict,
+    profile: f.profile,
+    wine: f.wine,
+    delta_wine_minus_profile: f.delta,
+    furthest: f.furthest,
+    closest: f.closest,
+    grapes: f.grapes,
+    country: f.country,
+  };
+  let tail = 'Refer to wines by grape and country only, never by brand.';
+  if (lastLoved != null) {
+    const rec = lastLoved as { grape?: unknown; country?: unknown };
+    facts.last_loved = {
+      grape: typeof rec.grape === 'string' ? rec.grape : '',
+      country: typeof rec.country === 'string' ? rec.country : '',
+    };
+    tail =
+      'Refer to wines by grape and country only, never by brand; ' +
+      'you may mention the wine the user last loved in sentence 2, by grape and country only, never by brand.';
+  }
+  return (
+    'The match below was already computed and is final. All taste values are 1-5.\n\n' +
+    JSON.stringify(facts) +
+    '\n\n' +
+    tail +
+    ' Write the two sentences.'
+  );
+}
+
+const FIRST_SENTENCE: Record<VerdictLabel, string> = {
+  'strong match': "You'll love this one — it's a strong match for your taste.",
+  'likely match': "You'll probably enjoy this one — it's a likely match for your taste.",
+  mixed: "You might enjoy this one — it's a mixed match for your taste.",
+  'unlikely match': "You likely won't enjoy this one — it's an unlikely match for you.",
+};
+
+function templateExplanation(f: ExplainFacts): string {
+  const high = f.score >= 60;
+  const axis = high ? f.closest.axis : f.furthest.axis;
+  const second = high
+    ? `Its ${axis} is the closest to your usual taste.`
+    : `Its ${axis} is the furthest from your usual taste.`;
+  return `${FIRST_SENTENCE[f.verdict]} ${second}`;
 }
 
 function toBase64(buf: ArrayBuffer): string {
@@ -219,55 +314,20 @@ app.post('/scan', async (c) => {
 
 app.post('/explain', async (c) => {
   const { wine, profile, score, lastLoved } = await c.req.json();
-  const prompt = `You are a friendly sommelier speaking to one person. Taste scale is 1-5.
-User profile: ${JSON.stringify(profile)}.
-Wine on the shelf: ${JSON.stringify(wine)}. Last wine they loved: ${JSON.stringify(lastLoved)}.
-Compatibility score (already computed): ${score}%.
-In two short sentences, tell the user whether they'd like it and why, comparing it to the wine they loved.
-Answer with exactly two short sentences, no preamble, no markdown.
-Refer to wines by grape and country only, never by brand. Speak about *their* taste, not about the wine's quality.`;
+  const facts = explainFacts(wine, profile, score);
   if (!c.env.BASETEN_API_KEY) {
-    console.warn('BASETEN_API_KEY is not set; falling back to muse-spark-1.3 via the Meta API');
-    const body = JSON.stringify({
-      model: 'muse-spark-1.3',
-      messages: [{ role: 'user', content: prompt }],
-      max_tokens: 4000,
-      temperature: 0.4,
-      reasoning_effort: 'low',
-    });
-    let data = null;
-    let tokens = 0;
-    let text = '';
-    for (let attempt = 0; attempt < 2 && !text; attempt++) {
-      const res = await fetch('https://api.meta.ai/v1/chat/completions', {
-        method: 'POST',
-        headers: { authorization: `Bearer ${c.env.META_API_KEY}`, 'content-type': 'application/json' },
-        body,
-      });
-      if (!res.ok) {
-        console.error(res.status, await res.text());
-        return c.json({ error: 'explanation failed' }, 502);
-      }
-      data = await res.json();
-      tokens += data?.usage?.total_tokens ?? 0;
-      text = chatText(data?.choices?.[0]);
-      if (!text.trim()) {
-        text = '';
-        if (attempt === 0) console.error('spark-meta explanation empty; raw response:', JSON.stringify(data).slice(0, 1000));
-      }
-    }
-    if (!text) {
-      return c.json({ error: 'explanation failed', finish_reason: data?.choices?.[0]?.finish_reason ?? null }, 502);
-    }
-    await trackUsage(c.env, 'meta', tokens);
-    return c.json({ text, explained_by: 'spark-meta' });
+    console.warn('BASETEN_API_KEY is not set; using the local explanation template');
+    return c.json({ text: templateExplanation(facts), explained_by: 'template' });
   }
   const res = await fetch('https://inference.baseten.co/v1/chat/completions', {
     method: 'POST',
     headers: { authorization: `Bearer ${c.env.BASETEN_API_KEY}`, 'content-type': 'application/json' },
     body: JSON.stringify({
       model: 'meta-models/muse-spark-open-1026',
-      messages: [{ role: 'user', content: prompt }],
+      messages: [
+        { role: 'system', content: EXPLAIN_SYSTEM },
+        { role: 'user', content: explainUserMessage(facts, lastLoved) },
+      ],
       max_tokens: 2000,
       temperature: 0.4,
       reasoning_effort: 'low',
