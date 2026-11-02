@@ -1,5 +1,5 @@
 // Exercises the full learning loop against a running Worker:
-// reset → scan (miss) → feedback loved → scan again (hit) → usage.
+// reset → scan (miss) → explain → feedback loved → scan again (hit) → usage.
 // Usage: node scripts/demo_learn.mjs [--api URL] [--user NAME] --photo <path>
 import { readFile } from 'node:fs/promises';
 
@@ -59,6 +59,7 @@ async function scan() {
   return {
     id, name: data.wine.name, color: data.wine.color, score: match.score,
     scanId: data.scan_id, cacheHit: data.cache_hit, readBy: data.read_by ?? data.readBy, ms,
+    wine: data.wine,
   };
 }
 const show = (s) =>
@@ -66,24 +67,34 @@ const show = (s) =>
 const first = await scan();
 console.log(`2. POST /scan → ${show(first)}`);
 
-// Step 3: loved.
+// Step 3: explain (same payload the Android app sends).
+const exp = await call('POST', '/explain', {
+  wine: first.wine,
+  profile: { acidity: 2, sweetness: 4, tannin: 2, body: 3 },
+  score: first.score,
+  lastLoved: { grape: 'Zinfandel', country: 'USA' },
+});
+const firstSentence = (exp.data.text.match(/^.*?[.?!](?=\s|$)/s) ?? [exp.data.text])[0].trim();
+console.log(`3. POST /explain → explained_by ${exp.data.explained_by}, "${firstSentence}"`);
+
+// Step 4: loved.
 const fb = await call('POST', '/feedback', { scan_id: first.scanId, verdict: 'loved' });
 const overlayKey = first.color === 'sparkling' ? 'white' : first.color;
 const overlay = fb.data[overlayKey];
-console.log(`3. POST /feedback loved → ${overlayKey} overlay ${JSON.stringify(overlay.axes)} n=${overlay.n}`);
+console.log(`4. POST /feedback loved → ${overlayKey} overlay ${JSON.stringify(overlay.axes)} n=${overlay.n}`);
 
-// Step 4: scan again.
+// Step 5: scan again.
 const second = await scan();
 const delta = second.score - first.score;
-console.log(`4. POST /scan → ${show(second)}, score delta ${delta >= 0 ? '+' : ''}${delta}`);
+console.log(`5. POST /scan → ${show(second)}, score delta ${delta >= 0 ? '+' : ''}${delta}`);
 
-// Step 5: usage.
+// Step 6: usage.
 const usage = await call('GET', '/usage');
-console.log(`5. GET /usage → ${JSON.stringify(usage.data)}`);
+console.log(`6. GET /usage → ${JSON.stringify(usage.data)}`);
 
-console.log(`miss: ${first.ms} ms (${first.readBy}) → hit: ${second.ms} ms, score ${first.score} → ${second.score}`);
+console.log(`miss: ${first.ms} ms (${first.readBy}) → hit: ${second.ms} ms, score ${first.score} → ${second.score}, explained_by ${exp.data.explained_by}`);
 if (second.cacheHit !== 1) {
-  console.error('FAIL: step 4 was not a cache hit');
+  console.error('FAIL: step 5 was not a cache hit');
   process.exit(1);
 }
 if (delta === 0) {

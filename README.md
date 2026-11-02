@@ -6,6 +6,29 @@
 
 **YourWine is an app for Meta Adventurer glasses that tells you whether you'll like a wine before you buy it — based on your own taste, not the crowd's.** It runs as an Android companion app for the glasses, with a web version so anyone can try it without hardware.
 
+## Run it locally (judges)
+
+You only need a Meta Model API key — no Baseten key, no Cloudflare account.
+
+```bash
+git clone https://github.com/jaac1966/yourwine.git
+cd yourwine/api
+npm install
+cp .dev.vars.example .dev.vars  # paste your Meta key into META_API_KEY (Baseten key optional)
+npm run dev  # answer Y to the one-time migration prompt; use http://127.0.0.1:8787, not localhost
+```
+
+Then, in another terminal from the repo root:
+
+```bash
+npm run demo:learn -- --photo samples/bread-and-butter-glasses.jpg
+```
+
+Photo taken with Meta Adventurer glasses, bottle in hand, in a supermarket aisle.
+
+This proves the learning loop: the first scan reads the label and scores it (cache miss), `loved` feedback shifts the taste profile,
+and the rescan hits the cache with a different score — scan → learn → rescan in one command.
+
 Standing in the wine aisle, you pick up a bottle and your glasses tell you — out loud, in seconds — whether you'll actually enjoy it, and whether your partner would, before you pay for it.
 
 Built for the Meta Global AI Developer Hackathon 2026 (Indie track).

@@ -1,0 +1,3 @@
+META_API_KEY=
+# Baseten is optional: without BASETEN_API_KEY, /explain falls back to muse-spark-1.3 via the Meta API.
+BASETEN_API_KEY=

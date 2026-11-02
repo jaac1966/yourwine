@@ -16,7 +16,7 @@ type Env = {
   USAGE: KV;
   DB: D1;
   META_API_KEY: string;
-  BASETEN_API_KEY: string;
+  BASETEN_API_KEY?: string;
 };
 
 const app = new Hono<{ Bindings: Env }>();
@@ -71,6 +71,24 @@ async function trackUsage(env: Env, provider: 'meta' | 'baseten', tokens: number
   const key = `usage:${new Date().toISOString().slice(0, 10)}:${provider}`;
   const current = Number((await env.USAGE.get(key)) ?? 0);
   await env.USAGE.put(key, String(current + tokens));
+}
+
+type ChatChoice = {
+  message?: { content?: unknown };
+  text?: unknown;
+  finish_reason?: unknown;
+};
+
+function chatText(choice: ChatChoice | undefined): string {
+  const content = choice?.message?.content;
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    return content
+      .map((p) => (typeof p === 'string' ? p : (p as { text?: unknown })?.text))
+      .filter((t): t is string => typeof t === 'string')
+      .join('');
+  }
+  return typeof choice?.text === 'string' ? choice.text : '';
 }
 
 function toBase64(buf: ArrayBuffer): string {
@@ -206,7 +224,44 @@ User profile: ${JSON.stringify(profile)}.
 Wine on the shelf: ${JSON.stringify(wine)}. Last wine they loved: ${JSON.stringify(lastLoved)}.
 Compatibility score (already computed): ${score}%.
 In two short sentences, tell the user whether they'd like it and why, comparing it to the wine they loved.
+Answer with exactly two short sentences, no preamble, no markdown.
 Refer to wines by grape and country only, never by brand. Speak about *their* taste, not about the wine's quality.`;
+  if (!c.env.BASETEN_API_KEY) {
+    console.warn('BASETEN_API_KEY is not set; falling back to muse-spark-1.3 via the Meta API');
+    const body = JSON.stringify({
+      model: 'muse-spark-1.3',
+      messages: [{ role: 'user', content: prompt }],
+      max_tokens: 4000,
+      temperature: 0.4,
+      reasoning_effort: 'low',
+    });
+    let data = null;
+    let tokens = 0;
+    let text = '';
+    for (let attempt = 0; attempt < 2 && !text; attempt++) {
+      const res = await fetch('https://api.meta.ai/v1/chat/completions', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${c.env.META_API_KEY}`, 'content-type': 'application/json' },
+        body,
+      });
+      if (!res.ok) {
+        console.error(res.status, await res.text());
+        return c.json({ error: 'explanation failed' }, 502);
+      }
+      data = await res.json();
+      tokens += data?.usage?.total_tokens ?? 0;
+      text = chatText(data?.choices?.[0]);
+      if (!text.trim()) {
+        text = '';
+        if (attempt === 0) console.error('spark-meta explanation empty; raw response:', JSON.stringify(data).slice(0, 1000));
+      }
+    }
+    if (!text) {
+      return c.json({ error: 'explanation failed', finish_reason: data?.choices?.[0]?.finish_reason ?? null }, 502);
+    }
+    await trackUsage(c.env, 'meta', tokens);
+    return c.json({ text, explained_by: 'spark-meta' });
+  }
   const res = await fetch('https://inference.baseten.co/v1/chat/completions', {
     method: 'POST',
     headers: { authorization: `Bearer ${c.env.BASETEN_API_KEY}`, 'content-type': 'application/json' },
@@ -224,7 +279,7 @@ Refer to wines by grape and country only, never by brand. Speak about *their* ta
   }
   const data = await res.json();
   await trackUsage(c.env, 'baseten', data?.usage?.total_tokens ?? 0);
-  return c.json({ text: data?.choices?.[0]?.message?.content ?? '' });
+  return c.json({ text: data?.choices?.[0]?.message?.content ?? '', explained_by: 'spark-open-baseten' });
 });
 
 app.post('/transcribe', async (c) => {
