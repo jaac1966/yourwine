@@ -165,6 +165,12 @@ HFP mic (Meta Glasses 05N2), 4.2 s recording (1.0 s speech, 92.8 KB WAV), /trans
 
 Note: next step is capturing the photo in parallel with transcription.
 
+### Nov 2 — live supermarket shelf, yourwine.net
+Phone camera, mobile data. 3/3 labels read (Carmenere, Crianza, Chianti); 7–16 s photo→verdict.
+
+### Nov 2 — feedback loop in production (D1)
+"I loved it" moves the red profile; verdict changes on re-scan. (Per-feedback numbers after the learning-step fix to follow.)
+
 ## Troubleshooting
 - Meta AI answering instead of the app → fixed by setting MODE_IN_COMMUNICATION before the SCO device.
 - Glasses deliver HEIC → normalized to JPEG on the phone.
