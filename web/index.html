@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>YourWine — demo</title>
+    <meta name="description" content="YourWine one-screen demo: scan a wine label, get your match." />
+  </head>
+  <body>
+    <main class="app">
+      <header>
+        <h1>YourWine</h1>
+        <p class="sub">Demo · alex + Winebuddies ana &amp; luis</p>
+      </header>
+
+      <section class="card">
+        <label class="scan-btn" for="photo">Scan a label</label>
+        <input id="photo" type="file" accept="image/*" capture="environment" hidden />
+        <img id="preview" class="preview" alt="Label photo" hidden />
+        <p id="status" class="status" role="status"></p>
+      </section>
+
+      <section id="results" class="card" hidden>
+        <h2 id="wineName"></h2>
+        <div id="myScore" class="score"></div>
+        <div id="buddyScores" class="buddies"></div>
+        <p id="scanMeta" class="gray"></p>
+        <p id="explStatus" class="status"></p>
+        <p id="explText" class="expl"></p>
+        <p id="explMeta" class="gray"></p>
+      </section>
+
+      <section id="feedback" class="card" hidden>
+        <div class="row">
+          <button id="loved" type="button" class="btn good">I loved it</button>
+          <button id="meh" type="button" class="btn bad">Not for me</button>
+        </div>
+        <p id="fbMsg" class="status"></p>
+        <div id="bars" class="bars"></div>
+      </section>
+
+      <button id="again" type="button" class="btn" hidden>Scan again</button>
+
+      <footer>
+        <button id="reset" type="button" class="btn small">Reset demo profiles</button>
+        <p id="resetMsg" class="gray"></p>
+        <p><a href="https://github.com/jaac1966/yourwine">GitHub repo</a></p>
+        <p class="gray">Photos are sent to the Meta Model API and not stored. Alcohol: 18+ in Mexico / 21+ in the US.</p>
+      </footer>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

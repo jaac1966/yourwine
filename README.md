@@ -97,6 +97,12 @@ npm test
 curl -X POST http://localhost:8787/scan -F photo=@label.jpg -F user=alex -F buddies=ana,luis
 ```
 
+Web demo (one screen, no login):
+```bash
+cd web && npm install && npm run dev
+```
+Opens at http://localhost:5173 and talks to `VITE_API_URL` (default https://api.yourwine.net; point it at http://127.0.0.1:8787 for a local API). Deploy to Cloudflare Pages with build command `npm run build`, output directory `dist`, and env var `VITE_API_URL`.
+
 Hosted API: https://api.yourwine.net (alternate: https://yourwine-api.jaac.workers.dev, try /health)
 
 Android: open `android/` in Android Studio (or run `cd android && ./gradlew assembleDebug`).

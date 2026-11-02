@@ -1,0 +1,168 @@
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  background: #fff;
+  color: #1c1c1e;
+}
+
+.app {
+  max-width: 28rem;
+  margin: 0 auto;
+  padding: 1rem 1rem 3rem;
+}
+
+h1 {
+  font-size: 1.5rem;
+  margin: 0.5rem 0 0;
+}
+
+h2 {
+  font-size: 1.2rem;
+  margin: 0 0 0.25rem;
+}
+
+.sub {
+  color: #555;
+  margin: 0.25rem 0 1rem;
+}
+
+.card {
+  border: 1px solid #e2e2e6;
+  border-radius: 12px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.scan-btn {
+  display: block;
+  text-align: center;
+  background: #7a1f2b;
+  color: #fff;
+  font-size: 1.25rem;
+  font-weight: 700;
+  padding: 1rem;
+  border-radius: 12px;
+  cursor: pointer;
+}
+
+.preview {
+  width: 100%;
+  margin-top: 1rem;
+  border-radius: 8px;
+}
+
+.status {
+  min-height: 1.25em;
+  margin: 0.75rem 0 0;
+}
+
+.score {
+  font-size: 2rem;
+  font-weight: 800;
+  margin: 0.25rem 0;
+}
+
+.buddies {
+  font-size: 1.1rem;
+}
+
+.gray {
+  color: #6b6b70;
+  font-size: 0.85rem;
+  margin: 0.5rem 0 0;
+}
+
+.expl {
+  font-size: 1.05rem;
+  line-height: 1.45;
+  margin: 0.5rem 0 0;
+}
+
+.row {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.btn {
+  flex: 1;
+  padding: 0.8rem;
+  font-size: 1rem;
+  border-radius: 10px;
+  border: 1px solid #ccc;
+  background: #f4f4f6;
+  color: #1c1c1e;
+  cursor: pointer;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.btn.good {
+  background: #1f7a3a;
+  border-color: transparent;
+  color: #fff;
+}
+
+.btn.bad {
+  background: #fff;
+  border-color: #7a1f2b;
+  color: #7a1f2b;
+}
+
+.btn.small {
+  flex: none;
+  font-size: 0.9rem;
+  padding: 0.5rem 0.8rem;
+}
+
+#again {
+  width: 100%;
+}
+
+.bars {
+  margin-top: 0.75rem;
+}
+
+.bar-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.3rem 0;
+}
+
+.bar-label {
+  width: 5.5rem;
+  text-transform: capitalize;
+  font-size: 0.9rem;
+}
+
+.bar-track {
+  flex: 1;
+  height: 0.6rem;
+  background: #eee;
+  border-radius: 4px;
+}
+
+.bar-fill {
+  height: 100%;
+  background: #7a1f2b;
+  border-radius: 4px;
+}
+
+.bar-num {
+  width: 2rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+footer {
+  margin-top: 1.5rem;
+  border-top: 1px solid #e2e2e6;
+  padding-top: 1rem;
+}
+
+footer a {
+  color: #7a1f2b;
+}
