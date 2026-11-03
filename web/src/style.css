@@ -82,4 +82,5 @@ details.debug pre{font-size:11px;background:var(--surface);border:1px solid var(
 @media (prefers-reduced-motion:reduce){.progress i{animation:none;width:100%}}
 .errorline{color:var(--bad);font-size:14px;font-weight:600;margin:8px 0 0}
 .btn.link{background:none;color:var(--wine);font-weight:600;padding:0;margin-top:6px;display:inline;text-decoration:underline}
+.btn.link.muted{color:var(--muted)}
 [hidden]{display:none!important}

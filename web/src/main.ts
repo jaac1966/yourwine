@@ -160,6 +160,7 @@ let lastPhoto: { b64: string; mime: string } | null = null;
 
 const scanBtn = el<HTMLButtonElement>('scan');
 const photoInput = el<HTMLInputElement>('photo');
+const photoFileInput = el<HTMLInputElement>('photoFile');
 const photoCard = el('photoCard');
 const preview = el<HTMLImageElement>('preview');
 const status = el('status');
@@ -396,8 +397,8 @@ scanBtn.addEventListener('click', () => {
   if (!busy) photoInput.click();
 });
 
-photoInput.addEventListener('change', async () => {
-  const file = photoInput.files?.[0];
+async function onPhotoChosen(input: HTMLInputElement) {
+  const file = input.files?.[0];
   if (!file || busy) return;
   preview.src = URL.createObjectURL(file);
   photoCard.hidden = false;
@@ -412,13 +413,18 @@ photoInput.addEventListener('change', async () => {
   }
   status.textContent = '';
   await scanAndExplain(photo);
-  photoInput.value = '';
-});
+  input.value = '';
+}
+photoInput.addEventListener('change', () => void onPhotoChosen(photoInput));
+photoFileInput.addEventListener('change', () => void onPhotoChosen(photoFileInput));
 
 el<HTMLButtonElement>('loved').addEventListener('click', () => void sendFeedback('loved'));
 el<HTMLButtonElement>('meh').addEventListener('click', () => void sendFeedback('not_for_me'));
 againBtn.addEventListener('click', () => {
   if (!busy) photoInput.click();
+});
+el<HTMLButtonElement>('chooseFile').addEventListener('click', () => {
+  if (!busy) photoFileInput.click();
 });
 tryAgain.addEventListener('click', () => {
   if (lastPhoto && !busy) void scanAndExplain(lastPhoto);
