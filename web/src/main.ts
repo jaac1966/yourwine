@@ -129,17 +129,28 @@ function verdictLabel(score: number): 'strong match' | 'likely match' | 'mixed' 
 }
 
 const CHIP_CLASS: Record<ReturnType<typeof verdictLabel>, string> = {
-  'strong match': 'chip-green',
-  'likely match': 'chip-olive',
-  mixed: 'chip-amber',
-  'unlikely match': 'chip-grey',
+  'strong match': 'ok',
+  'likely match': 'ok',
+  mixed: 'warn',
+  'unlikely match': 'bad',
 };
+
+const AXIS_META: Record<(typeof AXES)[number], { name: string; sub: string }> = {
+  acidity: { name: 'Acidity', sub: 'Soft → Tart' },
+  sweetness: { name: 'Sweetness', sub: 'Dry → Sweet' },
+  tannin: { name: 'Tannins', sub: 'Smooth → Grippy' },
+  body: { name: 'Body', sub: 'Light → Full' },
+};
+
+const AVATAR_COLORS = ['#B45A7E', '#4C6FB1'];
 
 let busy = false;
 let lastPhoto: { b64: string; mime: string } | null = null;
 let lastScan: ScanResp | null = null;
 
+const scanBtn = el<HTMLButtonElement>('scan');
 const photoInput = el<HTMLInputElement>('photo');
+const photoCard = el('photoCard');
 const preview = el<HTMLImageElement>('preview');
 const status = el('status');
 const results = el('results');
@@ -156,6 +167,9 @@ const explDebug = el('explDebug');
 const feedback = el('feedback');
 const fbMsg = el('fbMsg');
 const bars = el('bars');
+const avatars = el('avatars');
+const profileCard = el('profile');
+const profileTitle = el('profileTitle');
 const fbDebug = el('fbDebug');
 const againBtn = el<HTMLButtonElement>('again');
 const resetMsg = el('resetMsg');
@@ -164,7 +178,7 @@ el('debugBlock').hidden = new URLSearchParams(location.search).get('debug') !== 
 
 function setBusy(b: boolean) {
   busy = b;
-  for (const id of ['loved', 'meh', 'again', 'reset']) el<HTMLButtonElement>(id).disabled = b;
+  for (const id of ['scan', 'loved', 'meh', 'again', 'reset']) el<HTMLButtonElement>(id).disabled = b;
 }
 
 async function scanAndExplain(photo: { b64: string; mime: string }) {
@@ -172,6 +186,7 @@ async function scanAndExplain(photo: { b64: string; mime: string }) {
   setBusy(true);
   results.hidden = true;
   feedback.hidden = true;
+  profileCard.hidden = true;
   explText.textContent = '';
   explMeta.textContent = '';
   explDebug.textContent = '';
@@ -207,7 +222,7 @@ async function scanAndExplain(photo: { b64: string; mime: string }) {
     explStatus.textContent = '';
     explText.textContent = exp.text;
     explMeta.textContent = `explained_by ${exp.explained_by}`;
-    explDebug.textContent = JSON.stringify(exp.debug, null, 1);
+    explDebug.textContent = JSON.stringify(exp.debug);
   } catch (e) {
     explStatus.textContent = '';
     explText.textContent = `Explanation failed: ${message(e)}`;
@@ -220,66 +235,81 @@ function renderScan(scan: ScanResp) {
   wineName.textContent = `${scan.wine.name} · ${scan.wine.vintage ?? 'NV'}`;
   const me = scan.matches.find((m) => m.user === USER) ?? scan.matches[0];
   myScore.replaceChildren();
-  const pct = document.createElement('span');
-  pct.className = 'pct';
+  const pct = document.createElement('b');
   pct.textContent = `${me.score}%`;
   const forYou = document.createElement('span');
-  forYou.className = 'foryou';
-  forYou.textContent = ' for you';
+  forYou.textContent = 'for you';
   myScore.append(pct, forYou);
   const label = verdictLabel(me.score);
-  verdictChip.textContent = label;
+  verdictChip.textContent = label.charAt(0).toUpperCase() + label.slice(1);
   verdictChip.className = `chip ${CHIP_CLASS[label]}`;
-  buddyScores.replaceChildren();
-  for (const m of scan.matches.filter((m) => m.user !== USER)) {
-    const chip = document.createElement('span');
-    chip.className = 'chip chip-buddy';
-    chip.textContent = `${cap(m.user)} ${m.score}%`;
-    buddyScores.appendChild(chip);
-  }
+  const buddies = scan.matches.filter((m) => m.user !== USER);
+  buddyScores.textContent = buddies.map((m) => `${cap(m.user)} ${m.score}%`).join(' · ');
+  avatars.replaceChildren();
+  buddies.forEach((m, i) => {
+    const av = document.createElement('span');
+    av.className = 'av';
+    av.style.background = AVATAR_COLORS[i % AVATAR_COLORS.length];
+    av.textContent = m.user.charAt(0).toUpperCase();
+    avatars.appendChild(av);
+  });
   scanMeta.textContent = `read_by ${scan.read_by ?? scan.readBy ?? '?'} · cache_hit ${scan.cache_hit}`;
-  scanDebug.textContent = JSON.stringify(scan.debug, null, 1);
+  scanDebug.textContent = JSON.stringify(scan.debug);
   results.hidden = false;
   feedback.hidden = false;
   againBtn.hidden = false;
 }
 
-const barFills: HTMLDivElement[] = [];
-const barNums: HTMLSpanElement[] = [];
+type BarRefs = { segs: HTMLElement[]; v: HTMLSpanElement };
+const barRefs = new Map<(typeof AXES)[number], BarRefs>();
 
 function clearBars() {
   bars.replaceChildren();
-  barFills.length = 0;
-  barNums.length = 0;
+  barRefs.clear();
+}
+
+function segFill(v: number, i: number): string {
+  const full = Math.floor(v);
+  if (i < full) return '100%';
+  if (i === full) return `${Math.round((v - full) * 100)}%`;
+  return '0%';
 }
 
 function renderBars(eff: Axes) {
-  if (barFills.length === 0) {
+  if (barRefs.size === 0) {
     for (const k of AXES) {
+      const meta = AXIS_META[k];
       const row = document.createElement('div');
-      row.className = 'bar-row';
-      const label = document.createElement('span');
-      label.className = 'bar-label';
-      label.textContent = k;
-      const track = document.createElement('div');
-      track.className = 'bar-track';
-      const fill = document.createElement('div');
-      fill.className = 'bar-fill';
-      fill.style.width = '0%';
-      track.appendChild(fill);
+      row.className = 'axis';
+      const head = document.createElement('div');
+      const name = document.createElement('b');
+      name.textContent = meta.name;
+      const sub = document.createElement('small');
+      sub.textContent = meta.sub;
+      head.append(name, sub);
+      const seg = document.createElement('div');
+      seg.className = 'seg';
+      const segs: HTMLElement[] = [];
+      for (let i = 0; i < 5; i++) {
+        const s = document.createElement('i');
+        s.style.setProperty('--f', '0%');
+        seg.appendChild(s);
+        segs.push(s);
+      }
       const num = document.createElement('span');
-      num.className = 'bar-num';
-      row.append(label, track, num);
+      num.className = 'v';
+      row.append(head, seg, num);
       bars.appendChild(row);
-      barFills.push(fill);
-      barNums.push(num);
+      barRefs.set(k, { segs, v: num });
     }
     void bars.offsetWidth;
   }
-  AXES.forEach((k, i) => {
-    barFills[i].style.width = `${Math.max(3, ((eff[k] - 1) / 4) * 100)}%`;
-    barNums[i].textContent = String(Math.round(eff[k] * 10) / 10);
-  });
+  for (const k of AXES) {
+    const refs = barRefs.get(k);
+    if (!refs) continue;
+    refs.segs.forEach((s, i) => s.style.setProperty('--f', segFill(eff[k], i)));
+    refs.v.textContent = eff[k].toFixed(1);
+  }
 }
 
 async function sendFeedback(verdict: 'loved' | 'not_for_me') {
@@ -290,8 +320,10 @@ async function sendFeedback(verdict: 'loved' | 'not_for_me') {
     const profile = await post<Profile & { debug: FeedbackDebug }>('/feedback', { scan_id: lastScan.scan_id, verdict });
     const color = lastScan.wine.color === 'sparkling' ? 'white' : lastScan.wine.color;
     fbMsg.textContent = `Got it — your ${color} profile moved`;
+    profileTitle.textContent = `My profile · ${color}`;
+    profileCard.hidden = false;
     renderBars(effectiveProfile(profile, lastScan.wine.color));
-    fbDebug.textContent = JSON.stringify(profile.debug, null, 1);
+    fbDebug.textContent = JSON.stringify(profile.debug);
   } catch (e) {
     fbMsg.textContent = `Feedback failed: ${message(e)}`;
   } finally {
@@ -299,11 +331,15 @@ async function sendFeedback(verdict: 'loved' | 'not_for_me') {
   }
 }
 
+scanBtn.addEventListener('click', () => {
+  if (!busy) photoInput.click();
+});
+
 photoInput.addEventListener('change', async () => {
   const file = photoInput.files?.[0];
   if (!file || busy) return;
   preview.src = URL.createObjectURL(file);
-  preview.hidden = false;
+  photoCard.hidden = false;
   try {
     status.textContent = 'Resizing…';
     lastPhoto = await resizePhoto(file);

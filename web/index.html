@@ -1,62 +1,90 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>YourWine — demo</title>
-    <meta name="description" content="YourWine one-screen demo: scan a wine label, get your match." />
-  </head>
-  <body>
-    <main class="app">
-      <header>
-        <h1>YourWine</h1>
-        <p class="tagline">The best wine is the one you like.</p>
-        <p class="sub">Demo · alex + Winebuddies ana &amp; luis</p>
-      </header>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>YourWine — demo</title>
+<meta name="description" content="YourWine one-screen demo: scan a wine label, get your match.">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,700;1,9..144,500&family=Nunito+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+<div class="app stack">
 
-      <section class="card">
-        <label class="scan-btn" for="photo">Scan a label</label>
-        <input id="photo" type="file" accept="image/*" capture="environment" hidden />
-        <img id="preview" class="preview" alt="Label photo" hidden />
-        <p id="status" class="status" role="status"></p>
-      </section>
+  <div class="topbar">
+    <div class="brand">Your<i>Wine</i></div>
+    <span class="chip">Demo</span>
+  </div>
 
-      <section id="results" class="card" hidden>
-        <h2 id="wineName"></h2>
-        <div id="myScore" class="score"></div>
-        <span id="verdictChip" class="chip"></span>
-        <div id="buddyScores" class="buddies"></div>
-        <p id="explStatus" class="status"></p>
-        <p id="explText" class="expl"></p>
-        <p id="explMeta" class="gray"></p>
-        <p id="scanMeta" class="gray"></p>
-      </section>
+  <div>
+    <p class="eyebrow">Hi, Alex</p>
+    <h1>Looking at a bottle?</h1>
+    <button class="btn primary" id="scan">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><rect x="8" y="8" width="8" height="8" rx="1.5"/></svg>
+      Scan label
+    </button>
+    <input id="photo" type="file" accept="image/*" capture="environment" hidden />
+    <p id="status" class="small" role="status"></p>
+  </div>
 
-      <section id="feedback" class="card" hidden>
-        <div class="row">
-          <button id="loved" type="button" class="btn good">I loved it</button>
-          <button id="meh" type="button" class="btn bad">Not for me</button>
-        </div>
-        <p id="fbMsg" class="status"></p>
-        <div id="bars" class="bars"></div>
-      </section>
+  <div class="card glasses">
+    <div style="flex:1">
+      <p class="eyebrow">Meta Adventurer</p>
+      <h3>Glasses mode · hands-free</h3>
+      <small>Look at the bottle and ask “Would I like this one?”</small>
+    </div>
+    <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="14" cy="27" r="8"/><circle cx="34" cy="27" r="8"/><path d="M22 27h4M6 27 3 19M42 27l3-8M8 20c4-4 28-4 32 0"/></svg>
+  </div>
 
-      <button id="again" type="button" class="btn secondary" hidden>Scan again</button>
+  <div class="card" id="photoCard" hidden>
+    <img id="preview" class="photo" alt="Label photo">
+  </div>
 
-      <details id="debugBlock" class="debug" hidden>
-        <summary>Debug</summary>
-        <div class="debug-row"><span>scan</span><pre id="scanDebug" class="mono"></pre></div>
-        <div class="debug-row"><span>explain</span><pre id="explDebug" class="mono"></pre></div>
-        <div class="debug-row"><span>feedback</span><pre id="fbDebug" class="mono"></pre></div>
-      </details>
+  <div class="card" id="results" hidden>
+    <p class="eyebrow">Verdict</p>
+    <small id="wineName"></small>
+    <div class="row between">
+      <div class="score" id="myScore"></div>
+      <span class="chip" id="verdictChip"></span>
+    </div>
+    <p id="explStatus" class="small"></p>
+    <p class="explain" id="explText"></p>
+    <div class="prov"><span id="scanMeta"></span> · <span id="explMeta"></span></div>
 
-      <footer>
-        <button id="reset" type="button" class="btn small">Reset demo profiles</button>
-        <p id="resetMsg" class="gray"></p>
-        <p><a href="https://github.com/jaac1966/yourwine">GitHub repo</a></p>
-        <p class="gray">Photos are sent to the Meta Model API and not stored. Alcohol: 18+ in Mexico / 21+ in the US.</p>
-      </footer>
-    </main>
-    <script type="module" src="/src/main.ts"></script>
-  </body>
+    <div class="buddies">
+      <div class="avatars" id="avatars"></div>
+      <div><p class="eyebrow" style="margin:0">Winebuddies</p><b id="buddyScores"></b></div>
+    </div>
+
+    <details class="debug" id="debugBlock" hidden><summary>debug</summary><pre id="scanDebug"></pre><pre id="explDebug"></pre><pre id="fbDebug"></pre></details>
+  </div>
+
+  <div class="card stack" id="feedback" hidden>
+    <div class="two">
+      <button class="btn ok" id="loved">I loved it</button>
+      <button class="btn ghost" id="meh">Not for me</button>
+    </div>
+    <div class="toast" id="fbMsg"></div>
+  </div>
+
+  <div class="card soft" id="profile" hidden>
+    <div class="row between" style="margin-bottom:6px">
+      <p class="eyebrow" style="margin:0" id="profileTitle">My profile</p>
+      <span class="chip">alex</span>
+    </div>
+    <div id="bars"></div>
+    <small style="display:block;margin-top:8px">Learns from every verdict you rate.</small>
+  </div>
+
+  <button class="btn secondary" id="again" hidden>Scan again</button>
+
+  <div class="footer">
+    <button class="btn link" id="reset" style="padding-left:0">Reset demo profiles</button>
+    <p id="resetMsg" class="small"></p>
+    <a href="https://github.com/jaac1966/yourwine">GitHub repo</a>
+    <p class="legal">Photos are sent to the Meta Model API and not stored. Alcohol: 18+ in Mexico / 21+ in the US.</p>
+  </div>
+
+</div>
+<script type="module" src="/src/main.ts"></script>
+</body>
 </html>
