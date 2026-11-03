@@ -103,6 +103,8 @@ class MainActivity : ComponentActivity() {
     private var busy by mutableStateOf(false)
     private var wineName by mutableStateOf("")
     private var readBy by mutableStateOf("")
+    private var cacheHit by mutableStateOf(false)
+    private var lastScanId by mutableStateOf<String?>(null)
     private var scores by mutableStateOf("")
     private var lastError by mutableStateOf("")
     private var mockReady by mutableStateOf(false)
@@ -427,8 +429,8 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun sendFeedbackVoiced(loved: Boolean) {
-        val wine = lastWine
-        if (wine == null) {
+        val scanId = lastScanId
+        if (scanId == null) {
             handleVoice("")
             return
         }
@@ -436,8 +438,7 @@ class MainActivity : ComponentActivity() {
             try {
                 WineApi.post(
                     "/feedback", JSONObject()
-                        .put("user", "alex")
-                        .put("wine", wine)
+                        .put("scan_id", scanId)
                         .put("verdict", if (loved) "loved" else "not_for_me"),
                 )
             } catch (e: Exception) {
@@ -526,6 +527,7 @@ class MainActivity : ComponentActivity() {
                 )
                 val wine = scan.getJSONObject("wine")
                 lastWine = wine
+                lastScanId = scan.optString("scan_id").ifEmpty { null }
                 val matches = scan.getJSONArray("matches")
                 lastScores = (0 until matches.length()).associate {
                     val m = matches.getJSONObject(it)
@@ -539,6 +541,7 @@ class MainActivity : ComponentActivity() {
                 val me = matches.getJSONObject(0).getInt("score")
                 wineName = wine.getString("name")
                 readBy = scan.getString("readBy")
+                cacheHit = scan.optInt("cache_hit", 0) == 1
                 scores = (0 until matches.length()).joinToString(" · ") {
                     val m = matches.getJSONObject(it)
                     "${m.getString("user")}: ${m.getInt("score")}%"
@@ -566,18 +569,21 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun onFeedback(loved: Boolean) {
-        val wine = lastWine ?: return
+        val scanId = lastScanId ?: return
+        if (busy) return
+        busy = true
         lifecycleScope.launch {
             try {
                 WineApi.post(
                     "/feedback", JSONObject()
-                        .put("user", "alex")
-                        .put("wine", wine)
+                        .put("scan_id", scanId)
                         .put("verdict", if (loved) "loved" else "not_for_me"),
                 )
                 Log.i(TAG, "feedback sent: $loved")
             } catch (e: Exception) {
                 showError("api: ${e.message}")
+            } finally {
+                busy = false
             }
         }
     }
@@ -611,11 +617,27 @@ class MainActivity : ComponentActivity() {
             Log.w(TAG, "could not decode capture, sending as-is")
             return jpeg
         }
+        val longest = maxOf(bitmap.width, bitmap.height)
+        val scaled = if (longest > 1024) {
+            val factor = 1024f / longest
+            val s = Bitmap.createScaledBitmap(
+                bitmap,
+                maxOf(1, (bitmap.width * factor).toInt()),
+                maxOf(1, (bitmap.height * factor).toInt()),
+                true,
+            )
+            bitmap.recycle()
+            s
+        } else {
+            bitmap
+        }
+        val w = scaled.width
+        val h = scaled.height
         val out = ByteArrayOutputStream()
-        bitmap.compress(Bitmap.CompressFormat.JPEG, 85, out)
-        bitmap.recycle()
+        scaled.compress(Bitmap.CompressFormat.JPEG, 85, out)
+        scaled.recycle()
         val recoded = out.toByteArray()
-        Log.i(TAG, "re-encoded JPEG q85: ${recoded.size} bytes")
+        Log.i(TAG, "re-encoded JPEG q85 ${w}x${h}: ${recoded.size} bytes")
         return recoded
     }
 
@@ -696,12 +718,12 @@ class MainActivity : ComponentActivity() {
                     }
                     if (wineName.isNotEmpty()) {
                         Text(wineName, style = MaterialTheme.typography.titleLarge)
-                        Text("read by $readBy")
+                        Text("read by $readBy" + if (cacheHit) " · known bottle" else "")
                         Text(scores)
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Button(onClick = { onFeedback(true) }, enabled = lastWine != null) { Text("Loved it") }
-                        Button(onClick = { onFeedback(false) }, enabled = lastWine != null) { Text("Not for me") }
+                        Button(onClick = { onFeedback(true) }, enabled = lastScanId != null && !busy) { Text("Loved it") }
+                        Button(onClick = { onFeedback(false) }, enabled = lastScanId != null && !busy) { Text("Not for me") }
                     }
                     if (lastError.isNotEmpty()) Text("Error: $lastError")
                 }

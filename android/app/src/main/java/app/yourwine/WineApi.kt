@@ -11,8 +11,9 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 
+const val API_BASE = "https://api.yourwine.net"
+
 object WineApi {
-    private const val BASE = "https://yourwine-api.jaac.workers.dev"
     private val client = OkHttpClient.Builder()
         .callTimeout(40, TimeUnit.SECONDS)
         .connectTimeout(40, TimeUnit.SECONDS)
@@ -21,7 +22,7 @@ object WineApi {
     private val jsonMedia = "application/json".toMediaType()
 
     suspend fun post(path: String, body: JSONObject): JSONObject = withContext(Dispatchers.IO) {
-        val req = Request.Builder().url(BASE + path).post(body.toString().toRequestBody(jsonMedia)).build()
+        val req = Request.Builder().url(API_BASE + path).post(body.toString().toRequestBody(jsonMedia)).build()
         execute(req)
     }
 
@@ -29,7 +30,7 @@ object WineApi {
         val form = MultipartBody.Builder().setType(MultipartBody.FORM)
             .addFormDataPart("audio", "audio.wav", wav.toRequestBody("audio/wav".toMediaType()))
             .build()
-        execute(Request.Builder().url(BASE + path).post(form).build())
+        execute(Request.Builder().url(API_BASE + path).post(form).build())
     }
 
     private fun execute(req: Request): JSONObject {
