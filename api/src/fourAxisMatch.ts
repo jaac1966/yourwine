@@ -21,11 +21,8 @@ function overlayFor(profile: Profile, color: Color): Overlay {
 }
 
 export function effectiveProfile(profile: Profile, color: Color): Axes {
-  const overlay = overlayFor(profile, color);
-  const t = Math.min(overlay.n / 5, 1);
-  const eff = {} as Axes;
-  for (const k of AXES) eff[k] = profile.base[k] + (overlay.axes[k] - profile.base[k]) * t;
-  return eff;
+  // The effective profile IS the overlay axes; base is only the reset seed.
+  return { ...overlayFor(profile, color).axes };
 }
 
 export function fourAxisMatch(profile: Profile, wine: Wine): number {

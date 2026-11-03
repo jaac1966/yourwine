@@ -552,10 +552,7 @@ class MainActivity : ComponentActivity() {
                 val explain = WineApi.post(
                     "/explain", JSONObject()
                         .put("wine", wine)
-                        .put(
-                            "profile", JSONObject()
-                                .put("acidity", 2).put("sweetness", 4).put("tannin", 2).put("body", 3),
-                        )
+                        .put("user", "alex")
                         .put("score", me)
                         .put("lastLoved", JSONObject().put("grape", "Zinfandel").put("country", "USA")),
                 )

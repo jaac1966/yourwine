@@ -355,8 +355,8 @@ describe('POST /transcribe', () => {
 describe('POST /explain', () => {
   const body = {
     wine: { name: 'Test Red', country: 'Mexico', color: 'red', acidity: 3, sweetness: 2, tannin: 4, body: 4 },
-    profile: { acidity: 2, sweetness: 4, tannin: 2, body: 3 },
     score: 78,
+    user: 'alex',
     lastLoved: { grape: 'Zinfandel', country: 'USA' },
   };
   const explain = (e: ReturnType<typeof env>, b: object = body) =>
@@ -365,13 +365,14 @@ describe('POST /explain', () => {
 
   it('uses Baseten with the verdict as ground truth when BASETEN_API_KEY is set', async () => {
     const fetchMock = mockMeta(explainOk('You will love it. It is great.'));
-    const res = await explain(env());
+    // A stale body.profile must be ignored: alex's server overlay is 2/2/4/4.
+    const res = await explain(env(), { ...body, profile: { acidity: 2, sweetness: 4, tannin: 2, body: 3 } });
     expect(res.status).toBe(200);
     const data = await res.json();
     expect(data.text).toBe('You will love it. It is great.');
     expect(data.explained_by).toBe('spark-open-baseten');
     expect(data.debug).toMatchObject({
-      picked_axis: 'acidity',
+      picked_axis: 'tannin',
       magnitude: null,
       direction: null,
       score: 78,
@@ -384,10 +385,10 @@ describe('POST /explain', () => {
     expect(sent.messages[0]).toMatchObject({ role: 'system' });
     expect(sent.messages[0].content).toContain('never contradict it');
     expect(sent.messages[1].content).toContain('"verdict":"likely match"');
-    expect(sent.messages[1].content).toContain('"delta_wine_minus_profile":{"acidity":1,"sweetness":-2,"tannin":2,"body":1}');
+    expect(sent.messages[1].content).toContain('"delta_wine_minus_profile":{"acidity":1,"sweetness":0,"tannin":0,"body":0}');
     expect(sent.messages[1].content).toContain('"last_loved":{"grape":"Zinfandel","country":"USA"}');
     expect(sent.messages[1].content).toContain('you may mention the wine the user last loved in sentence 2');
-    expect(sent.messages[1].content).toContain('"picked":{"axis":"acidity","relation":"close match"}');
+    expect(sent.messages[1].content).toContain('"picked":{"axis":"tannin","relation":"close match"}');
     expect(sent.messages[1].content).toContain('sentence 2 says this axis is close to what the user enjoys');
     expect(sent.messages[1].content).not.toContain('magnitude');
     expect(sent.messages[1].content).not.toContain('direction');
@@ -402,7 +403,7 @@ describe('POST /explain', () => {
     expect(res.status).toBe(200);
     const sent = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(sent.messages[1].content).toContain(
-      '"picked":{"axis":"tannin","delta":2,"magnitude":"much","direction":"higher"}',
+      '"picked":{"axis":"acidity","delta":1,"magnitude":"noticeably","direction":"higher"}',
     );
     expect(sent.messages[1].content).toContain('given magnitude word');
   });
@@ -411,7 +412,6 @@ describe('POST /explain', () => {
     {
       name: 'largest delta',
       score: 35,
-      profile: { acidity: 2, sweetness: 1.9, tannin: 3, body: 3 },
       wine: { acidity: 3.9, sweetness: 1, tannin: 3, body: 3 },
       axis: 'acidity',
       magnitude: 'much',
@@ -419,18 +419,16 @@ describe('POST /explain', () => {
     {
       name: 'tie prefers tannin',
       score: 35,
-      profile: { acidity: 2, sweetness: 4, tannin: 2, body: 3 },
-      wine: { acidity: 3.9, sweetness: 4, tannin: 3.8, body: 3 },
+      wine: { acidity: 2.9, sweetness: 2, tannin: 5, body: 4 },
       axis: 'tannin',
-      magnitude: 'much',
+      magnitude: 'noticeably',
     },
-  ])('template names the $axis axis ($name)', async ({ score, profile, wine, axis, magnitude }) => {
+  ])('template names the $axis axis ($name)', async ({ score, wine, axis, magnitude }) => {
     const fetchMock = vi.fn(async () => new Response('{}', { status: 200 }));
     vi.stubGlobal('fetch', fetchMock);
     const res = await explain(env(createFakeDb(), { BASETEN_API_KEY: '' }), {
       ...body,
       score,
-      profile,
       wine: { ...body.wine, ...wine },
     });
     expect(res.status).toBe(200);
@@ -439,7 +437,7 @@ describe('POST /explain', () => {
     expect(second).toContain(axis);
     expect(second).toContain(magnitude);
     expect(data.debug.wine_axes).toEqual(wine);
-    expect(data.debug.profile_axes).toEqual(profile);
+    expect(data.debug.profile_axes).toEqual({ acidity: 2, sweetness: 2, tannin: 4, body: 4 });
     expect(data.debug).toMatchObject({ picked_axis: axis, magnitude, direction: 'higher', score, label: 'unlikely match' });
     expect(fetchMock).not.toHaveBeenCalled();
   });
@@ -479,7 +477,7 @@ describe('POST /explain', () => {
       expect(data.text).toContain('likely match');
       expect(String(data.text).split('. ')).toHaveLength(2);
       expect(data.debug).toMatchObject({
-        picked_axis: 'acidity',
+        picked_axis: 'tannin',
         magnitude: null,
         direction: null,
         score: 78,
@@ -493,20 +491,23 @@ describe('POST /explain', () => {
   it.each([
     {
       score: 98,
-      wine: { acidity: 2, sweetness: 4, tannin: 3, body: 3 },
+      user: 'alex',
+      wine: { acidity: 2, sweetness: 4, tannin: 5, body: 3 },
       words: ['love', 'strong match'],
     },
     {
       score: 35,
+      user: 'luis',
       wine: { acidity: 2, sweetness: 1, tannin: 2, body: 3 },
       words: ["won't", 'unlikely match'],
     },
-  ])('template first sentence matches the verdict for score $score', async ({ score, wine, words }) => {
+  ])('template first sentence matches the verdict for score $score', async ({ score, user, wine, words }) => {
     const fetchMock = vi.fn(async () => new Response('{}', { status: 200 }));
     vi.stubGlobal('fetch', fetchMock);
     const res = await explain(env(createFakeDb(), { BASETEN_API_KEY: '' }), {
       ...body,
       score,
+      user,
       wine: { ...body.wine, ...wine },
     });
     expect(res.status).toBe(200);
@@ -514,6 +515,35 @@ describe('POST /explain', () => {
     const first = String(data.text).split('. ')[0];
     for (const w of words) expect(first).toContain(w);
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('requires a known user', async () => {
+    const missing = await explain(env(), { ...body, user: undefined });
+    expect(missing.status).toBe(400);
+    const unknown = await explain(env(), { ...body, user: 'mallory' });
+    expect(unknown.status).toBe(404);
+  });
+
+  it('reports one consistent profile through scan → explain → feedback → scan', async () => {
+    const db = createFakeDb();
+    mockMetaSequence(metaOk(JSON.stringify(wine)), metaOk(JSON.stringify(wine)));
+    await postJson('/reset', {}, db);
+    const scan1 = await scanJson({ photo_b64: 'abc123', user: 'alex' }, db);
+    const s1 = await scan1.json();
+    const exp = await explain(env(db, { BASETEN_API_KEY: '' }), {
+      wine: s1.wine,
+      score: s1.matches[0].score,
+      user: 'alex',
+      lastLoved: { grape: 'Zinfandel', country: 'USA' },
+    });
+    const e = await exp.json();
+    expect(e.debug.profile_axes).toEqual(s1.debug.profile_axes_before);
+    const fb = await postJson('/feedback', { scan_id: s1.scan_id, verdict: 'loved' }, db);
+    const f = await fb.json();
+    expect(f.debug.profile_before).toEqual(s1.debug.profile_axes_before);
+    const scan2 = await scanJson({ photo_b64: 'abc123', user: 'alex' }, db);
+    const s2 = await scan2.json();
+    expect(s2.debug.profile_axes_before).toEqual(f.debug.profile_after);
   });
 });
 

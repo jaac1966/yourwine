@@ -34,16 +34,16 @@ describe('fourAxisMatch', () => {
     expect(white).toBeGreaterThan(red);
   });
 
-  it('uses base when the user has 0 white tastings', () => {
+  it('scores against the overlay axes, ignoring base', () => {
     const p = profile(axes(3, 3, 3, 3), axes(1, 1, 1, 1), 0);
-    expect(fourAxisMatch(p, { ...axes(3, 3, 3, 3), color: 'white' })).toBe(100);
+    expect(fourAxisMatch(p, { ...axes(3, 3, 3, 3), color: 'white' })).toBe(50);
   });
 
-  it('lets the white overlay dominate after 5 white tastings', () => {
-    const p = profile(axes(1, 1, 1, 1), axes(5, 5, 5, 5), 5);
-    expect(fourAxisMatch(p, { ...axes(5, 5, 5, 5), color: 'white' })).toBe(100);
-    const capped = profile(axes(1, 1, 1, 1), axes(5, 5, 5, 5), 10);
-    expect(fourAxisMatch(capped, { ...axes(5, 5, 5, 5), color: 'white' })).toBe(100);
+  it('scores against the overlay regardless of n', () => {
+    const fresh = profile(axes(3, 3, 3, 3), axes(1, 1, 1, 1), 0);
+    const seasoned = profile(axes(3, 3, 3, 3), axes(1, 1, 1, 1), 10);
+    expect(fourAxisMatch(fresh, { ...axes(3, 3, 3, 3), color: 'white' })).toBe(50);
+    expect(fourAxisMatch(seasoned, { ...axes(3, 3, 3, 3), color: 'white' })).toBe(50);
   });
 });
 
@@ -80,6 +80,16 @@ describe('applyFeedback', () => {
     const p = profile(axes(2, 2, 4, 4));
     const updated = applyFeedback(p, { ...axes(4, 1, 2, 2), color: 'red' }, 'loved');
     expectAxesCloseTo(updated.red.axes, axes(2.9, 1.55, 3.1, 3.1));
+    expect(updated.red.n).toBe(1);
+  });
+
+  it('moves profile 2.2/1.9/3.8/3.8 toward wine 4/1/2/2 on the first loved', () => {
+    const p = profile(axes(2.2, 1.9, 3.8, 3.8));
+    const updated = applyFeedback(p, { ...axes(4, 1, 2, 2), color: 'red' }, 'loved');
+    expect(updated.red.axes.acidity).toBeCloseTo(3.0, 1);
+    expect(updated.red.axes.sweetness).toBeCloseTo(1.5, 1);
+    expect(updated.red.axes.tannin).toBeCloseTo(3.0, 1);
+    expect(updated.red.axes.body).toBeCloseTo(3.0, 1);
     expect(updated.red.n).toBe(1);
   });
 

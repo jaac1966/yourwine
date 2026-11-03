@@ -77,6 +77,14 @@ export async function getProfile(db: D1, userId: string): Promise<StoredProfile 
   return row ? toProfile(row) : null;
 }
 
+// Single effective profile used by scan, explain and feedback: the overlay axes.
+export async function getEffectiveAxes(db: D1, userId: string, color: Color): Promise<Axes | null> {
+  const stored = await getProfile(db, userId);
+  if (!stored) return null;
+  const overlay = color === 'sparkling' ? stored.profile.white : stored.profile[color];
+  return { ...overlay.axes };
+}
+
 export async function saveProfile(db: D1, userId: string, display: string, profile: Profile): Promise<void> {
   const { base, ...overlays } = profile;
   await db

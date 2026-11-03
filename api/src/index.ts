@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { applyFeedback, effectiveProfile, fourAxisMatch, learningStep, type Axes, type Color, type Profile } from './fourAxisMatch';
 import {
-  getProfile, getScan, getWine, insertScan, resetDemo, saveProfile, scanStats,
+  getEffectiveAxes, getProfile, getScan, getWine, insertScan, resetDemo, saveProfile, scanStats,
   seedProfilesIfEmpty, setScanFeedback, upsertWine, type D1, type NewWine,
 } from './db';
 import { wineId } from './wineId';
@@ -382,8 +382,16 @@ app.post('/scan', async (c) => {
 });
 
 app.post('/explain', async (c) => {
-  const { wine, profile, score, lastLoved } = await c.req.json();
-  const facts = explainFacts(wine, profile, score);
+  const { wine, score, lastLoved, user } = await c.req.json();
+  if (typeof user !== 'string' || !user) return c.json({ error: 'user required' }, 400);
+  const color = (wine as { color?: unknown })?.color;
+  if (color !== 'red' && color !== 'white' && color !== 'rose' && color !== 'sparkling') {
+    return c.json({ error: 'wine color required' }, 400);
+  }
+  await seedProfilesIfEmpty(c.env.DB);
+  const axes = await getEffectiveAxes(c.env.DB, user, color as Color);
+  if (!axes) return c.json({ error: `unknown user: ${user}` }, 404);
+  const facts = explainFacts(wine, axes, score);
   if (!c.env.BASETEN_API_KEY) {
     console.warn('BASETEN_API_KEY is not set; using the local explanation template');
     return c.json({ text: templateExplanation(facts), explained_by: 'template', debug: explainDebug(facts) });

@@ -70,8 +70,8 @@ console.log(`2. POST /scan → ${show(first)}`);
 // Step 3: explain (same payload the Android app sends).
 const exp = await call('POST', '/explain', {
   wine: first.wine,
-  profile: { acidity: 2, sweetness: 4, tannin: 2, body: 3 },
   score: first.score,
+  user,
   lastLoved: { grape: 'Zinfandel', country: 'USA' },
 });
 const firstSentence = (exp.data.text.match(/^.*?[.?!](?=\s|$)/s) ?? [exp.data.text])[0].trim();

@@ -66,10 +66,7 @@ const AXES = ['acidity', 'sweetness', 'tannin', 'body'] as const;
 // Keep in sync with api/src/fourAxisMatch.ts.
 function effectiveProfile(profile: Profile, color: Color): Axes {
   const overlay = color === 'sparkling' ? profile.white : profile[color];
-  const t = Math.min(overlay.n / 5, 1);
-  const eff = {} as Axes;
-  for (const k of AXES) eff[k] = profile.base[k] + (overlay.axes[k] - profile.base[k]) * t;
-  return eff;
+  return { ...overlay.axes };
 }
 
 function el<T extends HTMLElement>(id: string): T {
@@ -185,8 +182,8 @@ async function scanAndExplain(photo: { b64: string; mime: string }) {
     const me = lastScan.matches.find((m) => m.user === USER) ?? lastScan.matches[0];
     const exp = await post<ExplainResp>('/explain', {
       wine: lastScan.wine,
-      profile: { acidity: 2, sweetness: 4, tannin: 2, body: 3 },
       score: me.score,
+      user: USER,
       lastLoved: { grape: 'Zinfandel', country: 'USA' },
     });
     explStatus.textContent = '';
