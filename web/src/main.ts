@@ -168,11 +168,11 @@ const wineName = el('wineName');
 const myScore = el('myScore');
 const verdictChip = el('verdictChip');
 const buddyScores = el('buddyScores');
-const scanMeta = el('scanMeta');
+const provLine = el('provLine');
 const scanDebug = el('scanDebug');
 const explStatus = el('explStatus');
 const explText = el('explText');
-const explMeta = el('explMeta');
+const bottleChip = el('bottleChip');
 const explDebug = el('explDebug');
 const feedback = el('feedback');
 const fbMsg = el('fbMsg');
@@ -189,7 +189,9 @@ const tryAgain = el<HTMLButtonElement>('tryAgain');
 const buddiesBlock = el('buddiesBlock');
 const profileStatus = el('profileStatus');
 
-el('debugBlock').hidden = new URLSearchParams(location.search).get('debug') !== '1';
+const DEBUG = new URLSearchParams(location.search).get('debug') === '1';
+el('debugBlock').hidden = !DEBUG;
+provLine.hidden = !DEBUG;
 
 function setBusy(b: boolean) {
   busy = b;
@@ -208,6 +210,20 @@ function clearVerdictError() {
   tryAgain.hidden = true;
 }
 
+function setExplStatus(lead: string, model: string) {
+  explStatus.replaceChildren();
+  explStatus.append(lead);
+  const b = document.createElement('b');
+  b.className = 'model';
+  b.textContent = `${model}…`;
+  explStatus.append(b);
+}
+
+const provParts = { readBy: '', cacheHit: '', expBy: '' };
+function renderProv() {
+  provLine.textContent = [provParts.readBy, provParts.cacheHit, provParts.expBy].filter(Boolean).join(' · ');
+}
+
 async function scanAndExplain(photo: { b64: string; mime: string }) {
   if (busy) return;
   setBusy(true);
@@ -215,6 +231,7 @@ async function scanAndExplain(photo: { b64: string; mime: string }) {
   feedback.hidden = true;
   clearVerdictError();
   wineName.textContent = '';
+  bottleChip.textContent = '';
   myScore.replaceChildren();
   verdictChip.textContent = '';
   verdictChip.className = 'chip';
@@ -222,15 +239,15 @@ async function scanAndExplain(photo: { b64: string; mime: string }) {
   avatars.replaceChildren();
   buddiesBlock.hidden = true;
   explText.textContent = '';
-  explMeta.textContent = '';
   explDebug.textContent = '';
   fbMsg.textContent = '';
-  scanMeta.textContent = '';
+  provParts.readBy = provParts.cacheHit = provParts.expBy = '';
+  renderProv();
   scanDebug.textContent = '';
   fbDebug.textContent = '';
   progress.hidden = false;
   try {
-    explStatus.textContent = 'Reading the label with Muse Spark…';
+    setExplStatus('Reading the label with ', 'Muse Spark');
     const scan = await post<ScanResp>('/scan', {
       photo_b64: photo.b64,
       mime: photo.mime,
@@ -245,7 +262,7 @@ async function scanAndExplain(photo: { b64: string; mime: string }) {
     return;
   }
   try {
-    explStatus.textContent = 'Writing the explanation with Muse Spark Open…';
+    setExplStatus('Writing the explanation with ', 'Muse Spark Open');
     const me = lastScan.matches.find((m) => m.user === USER) ?? lastScan.matches[0];
     const exp = await post<ExplainResp>('/explain', {
       wine: lastScan.wine,
@@ -256,7 +273,8 @@ async function scanAndExplain(photo: { b64: string; mime: string }) {
     progress.hidden = true;
     explStatus.textContent = '';
     explText.textContent = exp.text;
-    explMeta.textContent = `explained_by ${exp.explained_by}`;
+    provParts.expBy = `explained_by ${exp.explained_by}`;
+    renderProv();
     explDebug.textContent = JSON.stringify(exp.debug);
   } catch (e) {
     showVerdictError(`Explanation failed: ${message(e)}`);
@@ -288,7 +306,10 @@ function renderScan(scan: ScanResp) {
     av.textContent = m.user.charAt(0).toUpperCase();
     avatars.appendChild(av);
   });
-  scanMeta.textContent = `read_by ${scan.read_by ?? scan.readBy ?? '?'} · cache_hit ${scan.cache_hit}`;
+  provParts.readBy = `read_by ${scan.read_by ?? scan.readBy ?? '?'}`;
+  provParts.cacheHit = `cache_hit ${scan.cache_hit}`;
+  renderProv();
+  bottleChip.textContent = scan.cache_hit ? 'Known bottle' : 'New bottle';
   scanDebug.textContent = JSON.stringify(scan.debug);
   results.hidden = false;
   feedback.hidden = false;

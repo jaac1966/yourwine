@@ -71,7 +71,10 @@ details.debug pre{font-size:11px;background:var(--surface);border:1px solid var(
 @property --f { syntax: "<percentage>"; inherits: true; initial-value: 0%; }
 @media (prefers-reduced-motion: reduce) { .seg i::after { transition: none; } }
 /* Transient status lines take no space while empty. */
-#status:empty, #explStatus:empty, #resetMsg:empty, #explText:empty, #fbMsg:empty, #verdictError:empty, #verdictChip:empty, #myScore:empty, #profileStatus:empty, details.debug pre:empty { display: none; }
+#status:empty, #explStatus:empty, #resetMsg:empty, #explText:empty, #fbMsg:empty, #verdictError:empty, #verdictChip:empty, #myScore:empty, #profileStatus:empty, #provLine:empty, #bottleChip:empty, details.debug pre:empty { display: none; }
+.eyebrow .model{color:var(--wine);font-weight:700}
+.chip.tiny{font-size:10px;padding:2px 8px}
+.winehead{gap:8px;margin:2px 0 0}
 
 .progress{height:3px;border-radius:2px;background:var(--wine-soft);overflow:hidden;margin:8px 0}
 .progress i{display:block;height:100%;width:35%;border-radius:2px;background:var(--wine);animation:slide 1.1s ease-in-out infinite}

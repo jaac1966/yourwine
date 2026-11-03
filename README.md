@@ -1,5 +1,7 @@
 **Live demo:** https://yourwine.net · **API:** https://api.yourwine.net · Scan a label in 2 minutes, no key needed.
 
+Shared demo profile — tap Reset to start from the base taste profile.
+
 # YourWine
 
 **API:** https://api.yourwine.net (alternate: https://yourwine-api.jaac.workers.dev)
