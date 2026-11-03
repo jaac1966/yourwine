@@ -109,6 +109,7 @@ function magnitudeFor(absDelta: number): Magnitude {
 }
 
 type AxisPick = { axis: keyof Axes; delta: number; magnitude: Magnitude; direction: 'higher' | 'lower' };
+type ClosePick = { axis: keyof Axes; relation: 'close match' };
 
 function annotatePick(sel: { axis: keyof Axes; delta: number }): AxisPick {
   return {
@@ -138,8 +139,7 @@ type ExplainFacts = {
   profile: Axes;
   wine: Axes;
   delta: Axes;
-  furthest: AxisPick;
-  closest: AxisPick;
+  picked: ClosePick | AxisPick;
   grapes: string[];
   country: string;
 };
@@ -155,8 +155,10 @@ function explainFacts(wine: unknown, profile: unknown, score: unknown): ExplainF
     w[k] = axisValue(wine, k);
     d[k] = w[k] - p[k];
   }
-  const furthest = annotatePick(selectAxis(d, 'largest'));
-  const closest = annotatePick(selectAxis(d, 'smallest'));
+  const furthest = selectAxis(d, 'largest');
+  const closest = selectAxis(d, 'smallest');
+  const picked: ClosePick | AxisPick =
+    clamped >= 60 ? { axis: closest.axis, relation: 'close match' } : annotatePick(furthest);
   const rec = (wine ?? {}) as { grapes?: unknown; country?: unknown };
   return {
     score: clamped,
@@ -164,8 +166,7 @@ function explainFacts(wine: unknown, profile: unknown, score: unknown): ExplainF
     profile: p,
     wine: w,
     delta: d,
-    furthest,
-    closest,
+    picked,
     grapes: Array.isArray(rec.grapes) ? rec.grapes.filter((g): g is string => typeof g === 'string') : [],
     country: typeof rec.country === 'string' ? rec.country : '',
   };
@@ -178,28 +179,28 @@ function explainUserMessage(f: ExplainFacts, lastLoved: unknown): string {
     profile: f.profile,
     wine: f.wine,
     delta_wine_minus_profile: f.delta,
-    furthest: f.furthest,
-    closest: f.closest,
+    picked: f.picked,
     grapes: f.grapes,
     country: f.country,
   };
-  let tail = 'Refer to wines by grape and country only, never by brand.';
+  let tail = 'Refer to wines by grape and country only, never by brand';
   if (lastLoved != null) {
     const rec = lastLoved as { grape?: unknown; country?: unknown };
     facts.last_loved = {
       grape: typeof rec.grape === 'string' ? rec.grape : '',
       country: typeof rec.country === 'string' ? rec.country : '',
     };
-    tail =
-      'Refer to wines by grape and country only, never by brand; ' +
-      'you may mention the wine the user last loved in sentence 2, by grape and country only, never by brand.';
+    tail += '; you may mention the wine the user last loved in sentence 2, by grape and country only, never by brand';
   }
+  tail +=
+    f.score >= 60
+      ? '; sentence 2 says this axis is close to what the user enjoys.'
+      : '; describe the degree with the given magnitude word; do not invent your own degree words.';
   return (
     'The match below was already computed and is final. All taste values are 1-5.\n\n' +
     JSON.stringify(facts) +
     '\n\n' +
     tail +
-    ' Describe the degree with the given magnitude word; do not invent your own degree words.' +
     ' Write the two sentences.'
   );
 }
@@ -212,8 +213,26 @@ const FIRST_SENTENCE: Record<VerdictLabel, string> = {
 };
 
 function templateExplanation(f: ExplainFacts): string {
-  const pick = f.score >= 60 ? f.closest : f.furthest;
+  const pick = f.picked;
+  if ('relation' in pick) {
+    return `${FIRST_SENTENCE[f.verdict]} Its ${pick.axis} is close to what you enjoy.`;
+  }
   return `${FIRST_SENTENCE[f.verdict]} Its ${pick.axis} is ${pick.magnitude} ${pick.direction} than your usual taste.`;
+}
+
+function explainDebug(f: ExplainFacts) {
+  const magnitude = 'magnitude' in f.picked ? f.picked.magnitude : null;
+  const direction = 'direction' in f.picked ? f.picked.direction : null;
+  return {
+    wine_axes: f.wine,
+    profile_axes: f.profile,
+    deltas: f.delta,
+    picked_axis: f.picked.axis,
+    magnitude,
+    direction,
+    score: f.score,
+    label: f.verdict,
+  };
 }
 
 function toBase64(buf: ArrayBuffer): string {
@@ -347,7 +366,7 @@ app.post('/explain', async (c) => {
   const facts = explainFacts(wine, profile, score);
   if (!c.env.BASETEN_API_KEY) {
     console.warn('BASETEN_API_KEY is not set; using the local explanation template');
-    return c.json({ text: templateExplanation(facts), explained_by: 'template' });
+    return c.json({ text: templateExplanation(facts), explained_by: 'template', debug: explainDebug(facts) });
   }
   const res = await fetch('https://inference.baseten.co/v1/chat/completions', {
     method: 'POST',
@@ -369,7 +388,7 @@ app.post('/explain', async (c) => {
   }
   const data = await res.json();
   await trackUsage(c.env, 'baseten', data?.usage?.total_tokens ?? 0);
-  return c.json({ text: data?.choices?.[0]?.message?.content ?? '', explained_by: 'spark-open-baseten' });
+  return c.json({ text: data?.choices?.[0]?.message?.content ?? '', explained_by: 'spark-open-baseten', debug: explainDebug(facts) });
 });
 
 app.post('/transcribe', async (c) => {

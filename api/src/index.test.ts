@@ -315,7 +315,16 @@ describe('POST /explain', () => {
     const fetchMock = mockMeta(explainOk('You will love it. It is great.'));
     const res = await explain(env());
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ text: 'You will love it. It is great.', explained_by: 'spark-open-baseten' });
+    const data = await res.json();
+    expect(data.text).toBe('You will love it. It is great.');
+    expect(data.explained_by).toBe('spark-open-baseten');
+    expect(data.debug).toMatchObject({
+      picked_axis: 'acidity',
+      magnitude: null,
+      direction: null,
+      score: 78,
+      label: 'likely match',
+    });
     expect(fetchMock.mock.calls[0][0]).toBe('https://inference.baseten.co/v1/chat/completions');
     const sent = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(sent.max_tokens).toBe(2000);
@@ -326,14 +335,24 @@ describe('POST /explain', () => {
     expect(sent.messages[1].content).toContain('"delta_wine_minus_profile":{"acidity":1,"sweetness":-2,"tannin":2,"body":1}');
     expect(sent.messages[1].content).toContain('"last_loved":{"grape":"Zinfandel","country":"USA"}');
     expect(sent.messages[1].content).toContain('you may mention the wine the user last loved in sentence 2');
+    expect(sent.messages[1].content).toContain('"picked":{"axis":"acidity","relation":"close match"}');
+    expect(sent.messages[1].content).toContain('sentence 2 says this axis is close to what the user enjoys');
+    expect(sent.messages[1].content).not.toContain('magnitude');
+    expect(sent.messages[1].content).not.toContain('direction');
+    expect(sent.messages[1].content).not.toContain('"furthest"');
+    expect(sent.messages[1].content).not.toContain('"closest"');
+    expect(console.warn).not.toHaveBeenCalled();
+  });
+
+  it('keeps magnitude and direction in the prompt for low scores', async () => {
+    const fetchMock = mockMeta(explainOk('ok. Fine.'));
+    const res = await explain(env(), { ...body, score: 35 });
+    expect(res.status).toBe(200);
+    const sent = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(sent.messages[1].content).toContain(
-      '"furthest":{"axis":"tannin","delta":2,"magnitude":"much","direction":"higher"}',
-    );
-    expect(sent.messages[1].content).toContain(
-      '"closest":{"axis":"acidity","delta":1,"magnitude":"noticeably","direction":"higher"}',
+      '"picked":{"axis":"tannin","delta":2,"magnitude":"much","direction":"higher"}',
     );
     expect(sent.messages[1].content).toContain('given magnitude word');
-    expect(console.warn).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -367,6 +386,23 @@ describe('POST /explain', () => {
     const second = String(data.text).split('. ')[1];
     expect(second).toContain(axis);
     expect(second).toContain(magnitude);
+    expect(data.debug.wine_axes).toEqual(wine);
+    expect(data.debug.profile_axes).toEqual(profile);
+    expect(data.debug).toMatchObject({ picked_axis: axis, magnitude, direction: 'higher', score, label: 'unlikely match' });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('template sentence 2 uses close-match wording for high scores', async () => {
+    const fetchMock = vi.fn(async () => new Response('{}', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const res = await explain(env(createFakeDb(), { BASETEN_API_KEY: '' }));
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    const second = String(data.text).split('. ')[1];
+    expect(second).toContain('close to what you enjoy');
+    for (const w of ['slightly', 'noticeably', 'much', 'higher', 'lower']) {
+      expect(second).not.toContain(w);
+    }
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -390,6 +426,13 @@ describe('POST /explain', () => {
       expect(data.explained_by).toBe('template');
       expect(data.text).toContain('likely match');
       expect(String(data.text).split('. ')).toHaveLength(2);
+      expect(data.debug).toMatchObject({
+        picked_axis: 'acidity',
+        magnitude: null,
+        direction: null,
+        score: 78,
+        label: 'likely match',
+      });
       expect(fetchMock).not.toHaveBeenCalled();
       expect(console.warn).toHaveBeenCalledTimes(1);
     },

@@ -29,7 +29,17 @@ type ScanResp = {
   scan_id: number;
   cache_hit: number;
 };
-type ExplainResp = { text: string; explained_by: string };
+type ExplainDebug = {
+  wine_axes: Axes;
+  profile_axes: Axes;
+  deltas: Axes;
+  picked_axis: string;
+  magnitude: string | null;
+  direction: string | null;
+  score: number;
+  label: string;
+};
+type ExplainResp = { text: string; explained_by: string; debug: ExplainDebug };
 
 const AXES = ['acidity', 'sweetness', 'tannin', 'body'] as const;
 
@@ -108,6 +118,7 @@ const scanMeta = el('scanMeta');
 const explStatus = el('explStatus');
 const explText = el('explText');
 const explMeta = el('explMeta');
+const explDebug = el('explDebug');
 const feedback = el('feedback');
 const fbMsg = el('fbMsg');
 const bars = el('bars');
@@ -126,6 +137,7 @@ async function scanAndExplain(photo: { b64: string; mime: string }) {
   feedback.hidden = true;
   explText.textContent = '';
   explMeta.textContent = '';
+  explDebug.textContent = '';
   fbMsg.textContent = '';
   bars.replaceChildren();
   try {
@@ -156,6 +168,7 @@ async function scanAndExplain(photo: { b64: string; mime: string }) {
     explStatus.textContent = '';
     explText.textContent = exp.text;
     explMeta.textContent = `explained_by ${exp.explained_by}`;
+    explDebug.textContent = JSON.stringify(exp.debug);
   } catch (e) {
     explStatus.textContent = '';
     explText.textContent = `Explanation failed: ${message(e)}`;
