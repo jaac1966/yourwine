@@ -518,15 +518,20 @@ describe('POST /explain', () => {
   });
 
   it('requires a known user', async () => {
+    const fetchMock = vi.fn(async () => {
+      throw new Error('unexpected network call');
+    });
+    vi.stubGlobal('fetch', fetchMock);
     const missing = await explain(env(), { ...body, user: undefined });
     expect(missing.status).toBe(400);
     const unknown = await explain(env(), { ...body, user: 'mallory' });
     expect(unknown.status).toBe(404);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('reports one consistent profile through scan → explain → feedback → scan', async () => {
     const db = createFakeDb();
-    mockMetaSequence(metaOk(JSON.stringify(wine)), metaOk(JSON.stringify(wine)));
+    const fetchMock = mockMetaSequence(metaOk(JSON.stringify(wine)), metaOk(JSON.stringify(wine)));
     await postJson('/reset', {}, db);
     const scan1 = await scanJson({ photo_b64: 'abc123', user: 'alex' }, db);
     const s1 = await scan1.json();
@@ -544,6 +549,8 @@ describe('POST /explain', () => {
     const scan2 = await scanJson({ photo_b64: 'abc123', user: 'alex' }, db);
     const s2 = await scan2.json();
     expect(s2.debug.profile_axes_before).toEqual(f.debug.profile_after);
+    // Exactly the two scan reads: explain took the template path, feedback is local.
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });
 
