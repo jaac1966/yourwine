@@ -120,6 +120,21 @@ async function resizePhoto(file: File, maxSide = 1024): Promise<{ b64: string; m
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
+// Keep in sync with the api verdict labels.
+function verdictLabel(score: number): 'strong match' | 'likely match' | 'mixed' | 'unlikely match' {
+  if (score >= 80) return 'strong match';
+  if (score >= 60) return 'likely match';
+  if (score >= 40) return 'mixed';
+  return 'unlikely match';
+}
+
+const CHIP_CLASS: Record<ReturnType<typeof verdictLabel>, string> = {
+  'strong match': 'chip-green',
+  'likely match': 'chip-olive',
+  mixed: 'chip-amber',
+  'unlikely match': 'chip-grey',
+};
+
 let busy = false;
 let lastPhoto: { b64: string; mime: string } | null = null;
 let lastScan: ScanResp | null = null;
@@ -130,6 +145,7 @@ const status = el('status');
 const results = el('results');
 const wineName = el('wineName');
 const myScore = el('myScore');
+const verdictChip = el('verdictChip');
 const buddyScores = el('buddyScores');
 const scanMeta = el('scanMeta');
 const scanDebug = el('scanDebug');
@@ -143,6 +159,8 @@ const bars = el('bars');
 const fbDebug = el('fbDebug');
 const againBtn = el<HTMLButtonElement>('again');
 const resetMsg = el('resetMsg');
+
+el('debugBlock').hidden = new URLSearchParams(location.search).get('debug') !== '1';
 
 function setBusy(b: boolean) {
   busy = b;
@@ -158,7 +176,7 @@ async function scanAndExplain(photo: { b64: string; mime: string }) {
   explMeta.textContent = '';
   explDebug.textContent = '';
   fbMsg.textContent = '';
-  bars.replaceChildren();
+  clearBars();
   scanDebug.textContent = '';
   fbDebug.textContent = '';
   try {
@@ -189,7 +207,7 @@ async function scanAndExplain(photo: { b64: string; mime: string }) {
     explStatus.textContent = '';
     explText.textContent = exp.text;
     explMeta.textContent = `explained_by ${exp.explained_by}`;
-    explDebug.textContent = JSON.stringify(exp.debug);
+    explDebug.textContent = JSON.stringify(exp.debug, null, 1);
   } catch (e) {
     explStatus.textContent = '';
     explText.textContent = `Explanation failed: ${message(e)}`;
@@ -201,39 +219,67 @@ async function scanAndExplain(photo: { b64: string; mime: string }) {
 function renderScan(scan: ScanResp) {
   wineName.textContent = `${scan.wine.name} · ${scan.wine.vintage ?? 'NV'}`;
   const me = scan.matches.find((m) => m.user === USER) ?? scan.matches[0];
-  myScore.textContent = `${me.score}% for you`;
-  buddyScores.textContent = scan.matches
-    .filter((m) => m.user !== USER)
-    .map((m) => `${cap(m.user)} ${m.score}%`)
-    .join(' · ');
+  myScore.replaceChildren();
+  const pct = document.createElement('span');
+  pct.className = 'pct';
+  pct.textContent = `${me.score}%`;
+  const forYou = document.createElement('span');
+  forYou.className = 'foryou';
+  forYou.textContent = ' for you';
+  myScore.append(pct, forYou);
+  const label = verdictLabel(me.score);
+  verdictChip.textContent = label;
+  verdictChip.className = `chip ${CHIP_CLASS[label]}`;
+  buddyScores.replaceChildren();
+  for (const m of scan.matches.filter((m) => m.user !== USER)) {
+    const chip = document.createElement('span');
+    chip.className = 'chip chip-buddy';
+    chip.textContent = `${cap(m.user)} ${m.score}%`;
+    buddyScores.appendChild(chip);
+  }
   scanMeta.textContent = `read_by ${scan.read_by ?? scan.readBy ?? '?'} · cache_hit ${scan.cache_hit}`;
-  scanDebug.textContent = JSON.stringify(scan.debug);
+  scanDebug.textContent = JSON.stringify(scan.debug, null, 1);
   results.hidden = false;
   feedback.hidden = false;
   againBtn.hidden = false;
 }
 
-function renderBars(eff: Axes) {
+const barFills: HTMLDivElement[] = [];
+const barNums: HTMLSpanElement[] = [];
+
+function clearBars() {
   bars.replaceChildren();
-  for (const k of AXES) {
-    const v = eff[k];
-    const row = document.createElement('div');
-    row.className = 'bar-row';
-    const label = document.createElement('span');
-    label.className = 'bar-label';
-    label.textContent = k;
-    const track = document.createElement('div');
-    track.className = 'bar-track';
-    const fill = document.createElement('div');
-    fill.className = 'bar-fill';
-    fill.style.width = `${Math.max(3, ((v - 1) / 4) * 100)}%`;
-    track.appendChild(fill);
-    const num = document.createElement('span');
-    num.className = 'bar-num';
-    num.textContent = String(Math.round(v * 10) / 10);
-    row.append(label, track, num);
-    bars.appendChild(row);
+  barFills.length = 0;
+  barNums.length = 0;
+}
+
+function renderBars(eff: Axes) {
+  if (barFills.length === 0) {
+    for (const k of AXES) {
+      const row = document.createElement('div');
+      row.className = 'bar-row';
+      const label = document.createElement('span');
+      label.className = 'bar-label';
+      label.textContent = k;
+      const track = document.createElement('div');
+      track.className = 'bar-track';
+      const fill = document.createElement('div');
+      fill.className = 'bar-fill';
+      fill.style.width = '0%';
+      track.appendChild(fill);
+      const num = document.createElement('span');
+      num.className = 'bar-num';
+      row.append(label, track, num);
+      bars.appendChild(row);
+      barFills.push(fill);
+      barNums.push(num);
+    }
+    void bars.offsetWidth;
   }
+  AXES.forEach((k, i) => {
+    barFills[i].style.width = `${Math.max(3, ((eff[k] - 1) / 4) * 100)}%`;
+    barNums[i].textContent = String(Math.round(eff[k] * 10) / 10);
+  });
 }
 
 async function sendFeedback(verdict: 'loved' | 'not_for_me') {
@@ -245,7 +291,7 @@ async function sendFeedback(verdict: 'loved' | 'not_for_me') {
     const color = lastScan.wine.color === 'sparkling' ? 'white' : lastScan.wine.color;
     fbMsg.textContent = `Got it — your ${color} profile moved`;
     renderBars(effectiveProfile(profile, lastScan.wine.color));
-    fbDebug.textContent = JSON.stringify(profile.debug);
+    fbDebug.textContent = JSON.stringify(profile.debug, null, 1);
   } catch (e) {
     fbMsg.textContent = `Feedback failed: ${message(e)}`;
   } finally {

@@ -10,6 +10,7 @@
     <main class="app">
       <header>
         <h1>YourWine</h1>
+        <p class="tagline">The best wine is the one you like.</p>
         <p class="sub">Demo · alex + Winebuddies ana &amp; luis</p>
       </header>
 
@@ -23,13 +24,12 @@
       <section id="results" class="card" hidden>
         <h2 id="wineName"></h2>
         <div id="myScore" class="score"></div>
+        <span id="verdictChip" class="chip"></span>
         <div id="buddyScores" class="buddies"></div>
-        <p id="scanMeta" class="gray"></p>
-        <p id="scanDebug" class="gray"></p>
         <p id="explStatus" class="status"></p>
         <p id="explText" class="expl"></p>
         <p id="explMeta" class="gray"></p>
-        <p id="explDebug" class="gray"></p>
+        <p id="scanMeta" class="gray"></p>
       </section>
 
       <section id="feedback" class="card" hidden>
@@ -39,10 +39,16 @@
         </div>
         <p id="fbMsg" class="status"></p>
         <div id="bars" class="bars"></div>
-        <p id="fbDebug" class="gray"></p>
       </section>
 
-      <button id="again" type="button" class="btn" hidden>Scan again</button>
+      <button id="again" type="button" class="btn secondary" hidden>Scan again</button>
+
+      <details id="debugBlock" class="debug" hidden>
+        <summary>Debug</summary>
+        <div class="debug-row"><span>scan</span><pre id="scanDebug" class="mono"></pre></div>
+        <div class="debug-row"><span>explain</span><pre id="explDebug" class="mono"></pre></div>
+        <div class="debug-row"><span>feedback</span><pre id="fbDebug" class="mono"></pre></div>
+      </details>
 
       <footer>
         <button id="reset" type="button" class="btn small">Reset demo profiles</button>
