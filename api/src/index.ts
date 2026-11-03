@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { applyFeedback, fourAxisMatch, type Axes, type Color, type Profile } from './fourAxisMatch';
+import { applyFeedback, effectiveProfile, fourAxisMatch, learningStep, type Axes, type Color, type Profile } from './fourAxisMatch';
 import {
   getProfile, getScan, getWine, insertScan, resetDemo, saveProfile, scanStats,
   seedProfilesIfEmpty, setScanFeedback, upsertWine, type D1, type NewWine,
@@ -358,7 +358,27 @@ app.post('/scan', async (c) => {
     userId: user, wineId: id, score: matches[0].score, buddies: buddies || null,
     cacheHit, readBy, latencyMs: Date.now() - t0,
   });
-  return c.json({ wine, matches, readBy, read_by: readBy, scan_id: scanId, cache_hit: cacheHit });
+  // Reuse the explain facts machinery so scan debug matches explain debug semantics.
+  const scoreFacts = explainFacts(
+    { acidity: wine.acidity, sweetness: wine.sweetness, tannin: wine.tannin, body: wine.body },
+    effectiveProfile(profiles[user], wine.color),
+    matches[0].score,
+  );
+  const scoreDebug = explainDebug(scoreFacts);
+  return c.json({
+    wine, matches, readBy, read_by: readBy, scan_id: scanId, cache_hit: cacheHit,
+    debug: {
+      scan_id: scanId,
+      wine_axes_used_for_score: scoreDebug.wine_axes,
+      profile_axes_before: scoreDebug.profile_axes,
+      deltas: scoreDebug.deltas,
+      picked_axis: scoreDebug.picked_axis,
+      magnitude: scoreDebug.magnitude,
+      direction: scoreDebug.direction,
+      score: scoreDebug.score,
+      label: scoreDebug.label,
+    },
+  });
 });
 
 app.post('/explain', async (c) => {
@@ -446,6 +466,9 @@ app.post('/feedback', async (c) => {
   if (!stored) return c.json({ error: `unknown user: ${scan.userId}` }, 404);
   const wine = await getWine(c.env.DB, scan.wineId);
   if (!wine) return c.json({ error: `unknown wine: ${scan.wineId}` }, 404);
+  const overlayKey = wine.color === 'sparkling' ? 'white' : wine.color;
+  const beforeAxes = { ...stored.profile[overlayKey].axes };
+  const nBefore = stored.profile[overlayKey].n;
   const updated = applyFeedback(
     stored.profile,
     { color: wine.color, acidity: wine.acidity, sweetness: wine.sweetness, tannin: wine.tannin, body: wine.body },
@@ -453,7 +476,17 @@ app.post('/feedback', async (c) => {
   );
   await saveProfile(c.env.DB, scan.userId, stored.displayName, updated);
   await setScanFeedback(c.env.DB, scan.id, verdict);
-  return c.json(updated);
+  return c.json({
+    ...updated,
+    debug: {
+      scan_id: scan.id,
+      wine_axes_used_for_update: { acidity: wine.acidity, sweetness: wine.sweetness, tannin: wine.tannin, body: wine.body },
+      profile_before: beforeAxes,
+      profile_after: { ...updated[overlayKey].axes },
+      step: learningStep(nBefore),
+      n: nBefore,
+    },
+  });
 });
 
 app.post('/reset', async (c) => {

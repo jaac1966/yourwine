@@ -21,6 +21,25 @@ type Profile = { base: Axes; red: Overlay; white: Overlay; rose: Overlay };
 type Color = 'red' | 'white' | 'rose' | 'sparkling';
 type Wine = { name: string; vintage: number | null; color: Color };
 type Match = { user: string; score: number };
+type ScanDebug = {
+  scan_id: number;
+  wine_axes_used_for_score: Axes;
+  profile_axes_before: Axes;
+  deltas: Axes;
+  picked_axis: string;
+  magnitude: string | null;
+  direction: string | null;
+  score: number;
+  label: string;
+};
+type FeedbackDebug = {
+  scan_id: number;
+  wine_axes_used_for_update: Axes;
+  profile_before: Axes;
+  profile_after: Axes;
+  step: number;
+  n: number;
+};
 type ScanResp = {
   wine: Wine;
   matches: Match[];
@@ -28,6 +47,7 @@ type ScanResp = {
   readBy?: string;
   scan_id: number;
   cache_hit: number;
+  debug: ScanDebug;
 };
 type ExplainDebug = {
   wine_axes: Axes;
@@ -115,6 +135,7 @@ const wineName = el('wineName');
 const myScore = el('myScore');
 const buddyScores = el('buddyScores');
 const scanMeta = el('scanMeta');
+const scanDebug = el('scanDebug');
 const explStatus = el('explStatus');
 const explText = el('explText');
 const explMeta = el('explMeta');
@@ -122,6 +143,7 @@ const explDebug = el('explDebug');
 const feedback = el('feedback');
 const fbMsg = el('fbMsg');
 const bars = el('bars');
+const fbDebug = el('fbDebug');
 const againBtn = el<HTMLButtonElement>('again');
 const resetMsg = el('resetMsg');
 
@@ -140,6 +162,8 @@ async function scanAndExplain(photo: { b64: string; mime: string }) {
   explDebug.textContent = '';
   fbMsg.textContent = '';
   bars.replaceChildren();
+  scanDebug.textContent = '';
+  fbDebug.textContent = '';
   try {
     status.textContent = 'Reading label…';
     const scan = await post<ScanResp>('/scan', {
@@ -186,6 +210,7 @@ function renderScan(scan: ScanResp) {
     .map((m) => `${cap(m.user)} ${m.score}%`)
     .join(' · ');
   scanMeta.textContent = `read_by ${scan.read_by ?? scan.readBy ?? '?'} · cache_hit ${scan.cache_hit}`;
+  scanDebug.textContent = JSON.stringify(scan.debug);
   results.hidden = false;
   feedback.hidden = false;
   againBtn.hidden = false;
@@ -219,10 +244,11 @@ async function sendFeedback(verdict: 'loved' | 'not_for_me') {
   setBusy(true);
   fbMsg.textContent = 'Saving…';
   try {
-    const profile = await post<Profile>('/feedback', { scan_id: lastScan.scan_id, verdict });
+    const profile = await post<Profile & { debug: FeedbackDebug }>('/feedback', { scan_id: lastScan.scan_id, verdict });
     const color = lastScan.wine.color === 'sparkling' ? 'white' : lastScan.wine.color;
     fbMsg.textContent = `Got it — your ${color} profile moved`;
     renderBars(effectiveProfile(profile, lastScan.wine.color));
+    fbDebug.textContent = JSON.stringify(profile.debug);
   } catch (e) {
     fbMsg.textContent = `Feedback failed: ${message(e)}`;
   } finally {

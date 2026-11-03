@@ -20,7 +20,7 @@ function overlayFor(profile: Profile, color: Color): Overlay {
   return color === 'sparkling' ? profile.white : profile[color];
 }
 
-function effectiveProfile(profile: Profile, color: Color): Axes {
+export function effectiveProfile(profile: Profile, color: Color): Axes {
   const overlay = overlayFor(profile, color);
   const t = Math.min(overlay.n / 5, 1);
   const eff = {} as Axes;

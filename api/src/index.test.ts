@@ -170,6 +170,21 @@ describe('POST /scan', () => {
     expect(data.cache_hit).toBe(1);
     expect(data.scan_id).toBe(2);
   });
+
+  it('includes scoring debug with axes, deltas, pick, score and label', async () => {
+    mockMeta(metaOk(JSON.stringify(wine)));
+    const res = await scanJson({ photo_b64: 'abc123', user: 'alex' });
+    const data = await res.json();
+    expect(data.debug.scan_id).toBe(data.scan_id);
+    expect(data.debug.wine_axes_used_for_score).toEqual({ acidity: 3, sweetness: 2, tannin: 4, body: 4 });
+    expect(data.debug.profile_axes_before).toEqual({ acidity: 2, sweetness: 2, tannin: 4, body: 4 });
+    expect(data.debug.deltas).toEqual({ acidity: 1, sweetness: 0, tannin: 0, body: 0 });
+    expect(data.debug.picked_axis).toBe('tannin');
+    expect(data.debug.magnitude).toBeNull();
+    expect(data.debug.direction).toBeNull();
+    expect(data.debug.score).toBe(94);
+    expect(data.debug.label).toBe('strong match');
+  });
 });
 
 describe('POST /feedback', () => {
@@ -224,6 +239,24 @@ describe('POST /feedback', () => {
     const badVerdict = await postJson('/feedback', { scan_id: 1, verdict: 'meh' }, db);
     expect(badVerdict.status).toBe(400);
   });
+
+  it('includes update debug with wine axes, before/after profile, step and n', async () => {
+    const db = createFakeDb();
+    mockMeta(metaOk(JSON.stringify(wine)));
+    const scan = await scanJson({ photo_b64: 'abc123', user: 'alex' }, db);
+    const { scan_id } = await scan.json();
+    const res = await postJson('/feedback', { scan_id, verdict: 'loved' }, db);
+    const data = await res.json();
+    expect(data.debug.scan_id).toBe(scan_id);
+    expect(data.debug.wine_axes_used_for_update).toEqual({ acidity: 3, sweetness: 2, tannin: 4, body: 4 });
+    expect(data.debug.profile_before).toEqual({ acidity: 2, sweetness: 2, tannin: 4, body: 4 });
+    expect(data.debug.profile_after.acidity).toBeCloseTo(2.45, 8);
+    expect(data.debug.profile_after.sweetness).toBe(2);
+    expect(data.debug.profile_after.tannin).toBe(4);
+    expect(data.debug.profile_after.body).toBe(4);
+    expect(data.debug.step).toBe(0.45);
+    expect(data.debug.n).toBe(0);
+  });
 });
 
 describe('POST /reset', () => {
@@ -242,6 +275,25 @@ describe('POST /reset', () => {
     expect(data.cache_hit).toBe(1);
     const again = await postJson('/feedback', { scan_id: data.scan_id, verdict: 'loved' }, db);
     expect(await again.json()).toMatchObject({ red: { n: 1 } });
+  });
+
+  it('resets the feedback count so the first loved after reset uses the full 0.45 step', async () => {
+    const db = createFakeDb();
+    mockMetaSequence(metaOk(JSON.stringify(wine)), metaOk(JSON.stringify(wine)));
+    const scan = await scanJson({ photo_b64: 'abc123', user: 'alex' }, db);
+    const { scan_id } = await scan.json();
+    await postJson('/feedback', { scan_id, verdict: 'loved' }, db);
+    await postJson('/feedback', { scan_id, verdict: 'loved' }, db);
+    await postJson('/reset', {}, db);
+    const rescan = await scanJson({ photo_b64: 'abc123', user: 'alex' }, db);
+    const fb = await postJson('/feedback', { scan_id: (await rescan.json()).scan_id, verdict: 'loved' }, db);
+    const red = (await fb.json()).red;
+    expect(red.n).toBe(1);
+    // alex red base is 2/2/4/4, wine is 3/2/4/4: only acidity moves, by 0.45 of the distance.
+    expect(red.axes.acidity).toBeCloseTo(2.45, 8);
+    expect(red.axes.sweetness).toBe(2);
+    expect(red.axes.tannin).toBe(4);
+    expect(red.axes.body).toBe(4);
   });
 });
 
