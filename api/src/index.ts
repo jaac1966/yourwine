@@ -502,6 +502,19 @@ app.post('/reset', async (c) => {
   return c.json({ ok: true });
 });
 
+app.get('/profile', async (c) => {
+  const user = c.req.query('user');
+  if (!user) return c.json({ error: 'user required' }, 400);
+  const color = c.req.query('color') ?? 'red';
+  if (color !== 'red' && color !== 'white' && color !== 'rose' && color !== 'sparkling') {
+    return c.json({ error: 'invalid color' }, 400);
+  }
+  await seedProfilesIfEmpty(c.env.DB);
+  const axes = await getEffectiveAxes(c.env.DB, user, color as Color);
+  if (!axes) return c.json({ error: `unknown user: ${user}` }, 404);
+  return c.json({ user, color, axes });
+});
+
 app.get('/usage', async (c) => {
   const day = new Date().toISOString().slice(0, 10);
   const [meta, baseten] = await Promise.all([

@@ -554,6 +554,31 @@ describe('POST /explain', () => {
   });
 });
 
+describe('GET /profile', () => {
+  it('returns the overlay axes for a user and color', async () => {
+    const res = await app.request('/profile?user=alex&color=red', {}, env());
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      user: 'alex',
+      color: 'red',
+      axes: { acidity: 2, sweetness: 2, tannin: 4, body: 4 },
+    });
+  });
+
+  it('defaults to red and validates input', async () => {
+    const db = createFakeDb();
+    const def = await app.request('/profile?user=ana', {}, env(db));
+    expect(def.status).toBe(200);
+    expect(await def.json()).toMatchObject({ user: 'ana', color: 'red' });
+    const missing = await app.request('/profile', {}, env(db));
+    expect(missing.status).toBe(400);
+    const unknown = await app.request('/profile?user=mallory', {}, env(db));
+    expect(unknown.status).toBe(404);
+    const badColor = await app.request('/profile?user=alex&color=green', {}, env(db));
+    expect(badColor.status).toBe(400);
+  });
+});
+
 describe('CORS', () => {
   it('allows any origin', async () => {
     const res = await app.request('/health', { headers: { Origin: 'https://example.com' } }, env());

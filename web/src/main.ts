@@ -60,6 +60,7 @@ type ExplainDebug = {
   label: string;
 };
 type ExplainResp = { text: string; explained_by: string; debug: ExplainDebug };
+type ProfileResp = { user: string; color: string; axes: Axes };
 
 const AXES = ['acidity', 'sweetness', 'tannin', 'body'] as const;
 
@@ -79,12 +80,8 @@ function message(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
-async function post<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(API_URL + path, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body),
-  });
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(API_URL + path, init);
   const text = await res.text();
   if (!res.ok) {
     let detail = text.slice(0, 200);
@@ -99,6 +96,18 @@ async function post<T>(path: string, body: unknown): Promise<T> {
     throw new Error(`${res.status} ${path}: ${detail}`);
   }
   return (text ? JSON.parse(text) : {}) as T;
+}
+
+async function post<T>(path: string, body: unknown): Promise<T> {
+  return request<T>(path, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+
+async function get<T>(path: string): Promise<T> {
+  return request<T>(path);
 }
 
 async function resizePhoto(file: File, maxSide = 1024): Promise<{ b64: string; mime: string }> {
@@ -145,8 +154,8 @@ const AXIS_META: Record<(typeof AXES)[number], { name: string; sub: string }> = 
 const AVATAR_COLORS = ['#B45A7E', '#4C6FB1'];
 
 let busy = false;
-let lastPhoto: { b64: string; mime: string } | null = null;
 let lastScan: ScanResp | null = null;
+let profileColor: Color = 'red';
 
 const scanBtn = el<HTMLButtonElement>('scan');
 const photoInput = el<HTMLInputElement>('photo');
@@ -178,7 +187,7 @@ el('debugBlock').hidden = new URLSearchParams(location.search).get('debug') !== 
 
 function setBusy(b: boolean) {
   busy = b;
-  for (const id of ['scan', 'loved', 'meh', 'again', 'reset']) el<HTMLButtonElement>(id).disabled = b;
+  for (const id of ['scan', 'loved', 'meh', 'reset']) el<HTMLButtonElement>(id).disabled = b;
 }
 
 async function scanAndExplain(photo: { b64: string; mime: string }) {
@@ -186,12 +195,10 @@ async function scanAndExplain(photo: { b64: string; mime: string }) {
   setBusy(true);
   results.hidden = true;
   feedback.hidden = true;
-  profileCard.hidden = true;
   explText.textContent = '';
   explMeta.textContent = '';
   explDebug.textContent = '';
   fbMsg.textContent = '';
-  clearBars();
   scanDebug.textContent = '';
   fbDebug.textContent = '';
   try {
@@ -263,11 +270,6 @@ function renderScan(scan: ScanResp) {
 type BarRefs = { segs: HTMLElement[]; v: HTMLSpanElement };
 const barRefs = new Map<(typeof AXES)[number], BarRefs>();
 
-function clearBars() {
-  bars.replaceChildren();
-  barRefs.clear();
-}
-
 function segFill(v: number, i: number): string {
   const full = Math.floor(v);
   if (i < full) return '100%';
@@ -312,6 +314,13 @@ function renderBars(eff: Axes) {
   }
 }
 
+async function loadProfile(color: Color) {
+  profileColor = color;
+  const data = await get<ProfileResp>(`/profile?user=${USER}&color=${color}`);
+  profileTitle.textContent = `My profile · ${data.color === 'sparkling' ? 'white' : data.color}`;
+  renderBars(data.axes);
+}
+
 async function sendFeedback(verdict: 'loved' | 'not_for_me') {
   if (busy || !lastScan) return;
   setBusy(true);
@@ -320,6 +329,7 @@ async function sendFeedback(verdict: 'loved' | 'not_for_me') {
     const profile = await post<Profile & { debug: FeedbackDebug }>('/feedback', { scan_id: lastScan.scan_id, verdict });
     const color = lastScan.wine.color === 'sparkling' ? 'white' : lastScan.wine.color;
     fbMsg.textContent = `Got it — your ${color} profile moved`;
+    profileColor = color;
     profileTitle.textContent = `My profile · ${color}`;
     profileCard.hidden = false;
     renderBars(effectiveProfile(profile, lastScan.wine.color));
@@ -340,21 +350,22 @@ photoInput.addEventListener('change', async () => {
   if (!file || busy) return;
   preview.src = URL.createObjectURL(file);
   photoCard.hidden = false;
+  let photo: { b64: string; mime: string };
   try {
     status.textContent = 'Resizing…';
-    lastPhoto = await resizePhoto(file);
+    photo = await resizePhoto(file);
   } catch (e) {
     status.textContent = `Could not read photo: ${message(e)}`;
     return;
   }
-  await scanAndExplain(lastPhoto);
+  await scanAndExplain(photo);
   photoInput.value = '';
 });
 
 el<HTMLButtonElement>('loved').addEventListener('click', () => void sendFeedback('loved'));
 el<HTMLButtonElement>('meh').addEventListener('click', () => void sendFeedback('not_for_me'));
 againBtn.addEventListener('click', () => {
-  if (lastPhoto) void scanAndExplain(lastPhoto);
+  if (!busy) photoInput.click();
 });
 el<HTMLButtonElement>('reset').addEventListener('click', async () => {
   if (busy) return;
@@ -364,7 +375,17 @@ el<HTMLButtonElement>('reset').addEventListener('click', async () => {
     resetMsg.textContent = 'Demo reset.';
   } catch (e) {
     resetMsg.textContent = `Reset failed: ${message(e)}`;
+    return;
   } finally {
     setBusy(false);
   }
+  try {
+    await loadProfile(profileColor);
+  } catch (e) {
+    resetMsg.textContent = `Could not reload profile: ${message(e)}`;
+  }
+});
+
+loadProfile('red').catch((e) => {
+  status.textContent = `Could not load profile: ${message(e)}`;
 });
