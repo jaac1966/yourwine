@@ -41,16 +41,19 @@
 
   <div class="card" id="results" hidden>
     <p class="eyebrow">Verdict</p>
+    <div class="progress" id="progress" hidden><i></i></div>
+    <p id="explStatus" class="eyebrow"></p>
     <small id="wineName"></small>
     <div class="row between">
       <div class="score" id="myScore"></div>
       <span class="chip" id="verdictChip"></span>
     </div>
-    <p id="explStatus" class="small"></p>
     <p class="explain" id="explText"></p>
     <div class="prov"><span id="scanMeta"></span> · <span id="explMeta"></span></div>
+    <p id="verdictError" class="errorline"></p>
+    <button id="tryAgain" class="btn link" hidden>Try again</button>
 
-    <div class="buddies">
+    <div class="buddies" id="buddiesBlock">
       <div class="avatars" id="avatars"></div>
       <div><p class="eyebrow" style="margin:0">Winebuddies</p><b id="buddyScores"></b></div>
     </div>
@@ -71,6 +74,7 @@
       <p class="eyebrow" style="margin:0" id="profileTitle">My profile</p>
       <span class="chip">alex</span>
     </div>
+    <p id="profileStatus" class="eyebrow"></p>
     <div id="bars"></div>
     <small style="display:block;margin-top:8px">Learns from every verdict you rate.</small>
   </div>

@@ -156,6 +156,7 @@ const AVATAR_COLORS = ['#B45A7E', '#4C6FB1'];
 let busy = false;
 let lastScan: ScanResp | null = null;
 let profileColor: Color = 'red';
+let lastPhoto: { b64: string; mime: string } | null = null;
 
 const scanBtn = el<HTMLButtonElement>('scan');
 const photoInput = el<HTMLInputElement>('photo');
@@ -182,6 +183,11 @@ const profileTitle = el('profileTitle');
 const fbDebug = el('fbDebug');
 const againBtn = el<HTMLButtonElement>('again');
 const resetMsg = el('resetMsg');
+const progress = el('progress');
+const verdictError = el('verdictError');
+const tryAgain = el<HTMLButtonElement>('tryAgain');
+const buddiesBlock = el('buddiesBlock');
+const profileStatus = el('profileStatus');
 
 el('debugBlock').hidden = new URLSearchParams(location.search).get('debug') !== '1';
 
@@ -190,19 +196,41 @@ function setBusy(b: boolean) {
   for (const id of ['scan', 'loved', 'meh', 'reset']) el<HTMLButtonElement>(id).disabled = b;
 }
 
+function showVerdictError(msg: string) {
+  progress.hidden = true;
+  explStatus.textContent = '';
+  verdictError.textContent = msg;
+  tryAgain.hidden = false;
+}
+
+function clearVerdictError() {
+  verdictError.textContent = '';
+  tryAgain.hidden = true;
+}
+
 async function scanAndExplain(photo: { b64: string; mime: string }) {
   if (busy) return;
   setBusy(true);
-  results.hidden = true;
+  results.hidden = false;
   feedback.hidden = true;
+  clearVerdictError();
+  wineName.textContent = '';
+  myScore.replaceChildren();
+  verdictChip.textContent = '';
+  verdictChip.className = 'chip';
+  buddyScores.textContent = '';
+  avatars.replaceChildren();
+  buddiesBlock.hidden = true;
   explText.textContent = '';
   explMeta.textContent = '';
   explDebug.textContent = '';
   fbMsg.textContent = '';
+  scanMeta.textContent = '';
   scanDebug.textContent = '';
   fbDebug.textContent = '';
+  progress.hidden = false;
   try {
-    status.textContent = 'Reading label…';
+    explStatus.textContent = 'Reading the label with Muse Spark…';
     const scan = await post<ScanResp>('/scan', {
       photo_b64: photo.b64,
       mime: photo.mime,
@@ -211,14 +239,13 @@ async function scanAndExplain(photo: { b64: string; mime: string }) {
     });
     lastScan = scan;
     renderScan(scan);
-    status.textContent = '';
   } catch (e) {
-    status.textContent = `Scan failed: ${message(e)}`;
+    showVerdictError(`Scan failed: ${message(e)}`);
     setBusy(false);
     return;
   }
   try {
-    explStatus.textContent = 'Explaining…';
+    explStatus.textContent = 'Writing the explanation with Muse Spark Open…';
     const me = lastScan.matches.find((m) => m.user === USER) ?? lastScan.matches[0];
     const exp = await post<ExplainResp>('/explain', {
       wine: lastScan.wine,
@@ -226,13 +253,13 @@ async function scanAndExplain(photo: { b64: string; mime: string }) {
       user: USER,
       lastLoved: { grape: 'Zinfandel', country: 'USA' },
     });
+    progress.hidden = true;
     explStatus.textContent = '';
     explText.textContent = exp.text;
     explMeta.textContent = `explained_by ${exp.explained_by}`;
     explDebug.textContent = JSON.stringify(exp.debug);
   } catch (e) {
-    explStatus.textContent = '';
-    explText.textContent = `Explanation failed: ${message(e)}`;
+    showVerdictError(`Explanation failed: ${message(e)}`);
   } finally {
     setBusy(false);
   }
@@ -252,6 +279,7 @@ function renderScan(scan: ScanResp) {
   verdictChip.className = `chip ${CHIP_CLASS[label]}`;
   const buddies = scan.matches.filter((m) => m.user !== USER);
   buddyScores.textContent = buddies.map((m) => `${cap(m.user)} ${m.score}%`).join(' · ');
+  buddiesBlock.hidden = buddies.length === 0;
   avatars.replaceChildren();
   buddies.forEach((m, i) => {
     const av = document.createElement('span');
@@ -324,7 +352,7 @@ async function loadProfile(color: Color) {
 async function sendFeedback(verdict: 'loved' | 'not_for_me') {
   if (busy || !lastScan) return;
   setBusy(true);
-  fbMsg.textContent = 'Saving…';
+  profileStatus.textContent = 'Updating your profile…';
   try {
     const profile = await post<Profile & { debug: FeedbackDebug }>('/feedback', { scan_id: lastScan.scan_id, verdict });
     const color = lastScan.wine.color === 'sparkling' ? 'white' : lastScan.wine.color;
@@ -333,8 +361,10 @@ async function sendFeedback(verdict: 'loved' | 'not_for_me') {
     profileTitle.textContent = `My profile · ${color}`;
     profileCard.hidden = false;
     renderBars(effectiveProfile(profile, lastScan.wine.color));
+    profileStatus.textContent = '';
     fbDebug.textContent = JSON.stringify(profile.debug);
   } catch (e) {
+    profileStatus.textContent = '';
     fbMsg.textContent = `Feedback failed: ${message(e)}`;
   } finally {
     setBusy(false);
@@ -354,10 +384,12 @@ photoInput.addEventListener('change', async () => {
   try {
     status.textContent = 'Resizing…';
     photo = await resizePhoto(file);
+    lastPhoto = photo;
   } catch (e) {
     status.textContent = `Could not read photo: ${message(e)}`;
     return;
   }
+  status.textContent = '';
   await scanAndExplain(photo);
   photoInput.value = '';
 });
@@ -366,6 +398,9 @@ el<HTMLButtonElement>('loved').addEventListener('click', () => void sendFeedback
 el<HTMLButtonElement>('meh').addEventListener('click', () => void sendFeedback('not_for_me'));
 againBtn.addEventListener('click', () => {
   if (!busy) photoInput.click();
+});
+tryAgain.addEventListener('click', () => {
+  if (lastPhoto && !busy) void scanAndExplain(lastPhoto);
 });
 el<HTMLButtonElement>('reset').addEventListener('click', async () => {
   if (busy) return;
