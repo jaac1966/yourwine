@@ -17,14 +17,18 @@ export function wineId(producer: string, name: string, vintage?: number | null):
   return `${p}-${n}-${vintage ?? 'nv'}`;
 }
 
-// Stable display name, used by /scan for fresh reads and cache hits alike:
-// strip the producer prefix when it repeats (same rule as wineId), strip a
-// trailing vintage year when vintage is set, trim and collapse spaces.
+// Stable display name: producer + distinctive name, trailing vintage removed.
+// Removes every leading repeat of the producer, re-adds it once, then strips
+// a trailing year equal to vintage. Idempotent.
 export function displayName(producer: string, name: string, vintage?: number | null): string {
   let n = name.replace(/\s+/g, ' ').trim();
   const prod = producer.replace(/\s+/g, ' ').trim();
-  if (prod && slug(n).startsWith(slug(prod) + '-') && n.toLowerCase().startsWith(prod.toLowerCase())) {
-    n = n.slice(prod.length).replace(/^[\s\-–—:]+/, '').trim();
+  if (prod) {
+    const p = slug(prod);
+    while (p && slug(n).startsWith(p + '-') && n.toLowerCase().startsWith(prod.toLowerCase())) {
+      n = n.slice(prod.length).replace(/^[\s\-–—:]+/, '').trim();
+    }
+    n = `${prod} ${n}`.trim();
   }
   if (vintage != null) {
     n = n.replace(new RegExp(`\\s+${vintage}$`), '');

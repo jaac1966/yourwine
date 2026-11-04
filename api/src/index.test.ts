@@ -228,6 +228,24 @@ describe('POST /scan', () => {
     const stored = await getWine(db, wineId('Bread & Butter', raw.name, 2022));
     expect(stored?.name).toBe('Bread & Butter Red Blend');
   });
+
+  it('hits the same row on rescan even when Wonder refined the name', async () => {
+    const db = createFakeDb();
+    const sparkWine = { ...wine, name: 'Spark Guess', confidence: 0.5 };
+    const wonderWine = { ...wine, name: 'Wonder Read', confidence: 0.95 };
+    const fetchMock = mockMetaSequence(
+      metaOk(JSON.stringify(sparkWine)),
+      metaOk(JSON.stringify(wonderWine)),
+      metaOk(JSON.stringify(sparkWine)),
+    );
+    const first = await scanJson({ photo_b64: 'abc123', user: 'alex' }, db);
+    expect((await first.json()).cache_hit).toBe(0);
+    const second = await scanJson({ photo_b64: 'abc123', user: 'alex' }, db);
+    const data = await second.json();
+    expect(data.cache_hit).toBe(1);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect((await getWine(db, wineId('', 'Spark Guess', undefined)))?.scanCount).toBe(2);
+  });
 });
 
 describe('POST /feedback', () => {

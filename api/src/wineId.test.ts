@@ -28,7 +28,13 @@ describe('wineId', () => {
 });
 
 describe('displayName', () => {
-  it('strips one repeated producer prefix and the trailing vintage year', () => {
+  it('is producer plus distinctive name with the vintage year removed', () => {
+    expect(displayName('Bread & Butter', 'Bread & Butter Red Blend', 2022)).toBe('Bread & Butter Red Blend');
+    expect(displayName('Bread & Butter', 'Red Blend', 2022)).toBe('Bread & Butter Red Blend');
+    expect(displayName('Georges Duboeuf', 'Georges Duboeuf Beaujolais-Villages 2021', 2021)).toBe('Georges Duboeuf Beaujolais-Villages');
+  });
+
+  it('collapses every leading repeat of the producer to one', () => {
     expect(displayName('Bread & Butter', 'Bread & Butter Bread & Butter Red Blend 2022', 2022)).toBe('Bread & Butter Red Blend');
   });
 
@@ -36,8 +42,7 @@ describe('displayName', () => {
     expect(displayName('', 'Georges Duboeuf Beaujolais-Villages 2021', 2021)).toBe('Georges Duboeuf Beaujolais-Villages');
   });
 
-  it('leaves a name without year or repeated producer unchanged', () => {
+  it('leaves a name without producer or year unchanged', () => {
     expect(displayName('', 'Beaujolais-Villages', null)).toBe('Beaujolais-Villages');
-    expect(displayName('Other Producer', 'Beaujolais-Villages', null)).toBe('Beaujolais-Villages');
   });
 });

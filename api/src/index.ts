@@ -340,16 +340,17 @@ app.post('/scan', async (c) => {
   if (!spark.wine?.color) return c.json({ error: 'could not read label' }, 502);
   const sparkWine = spark.wine as LabelWine;
   const producerOf = (w: LabelWine) => w.producer ?? w.winery ?? '';
-  const stored = await getWine(c.env.DB, wineId(producerOf(sparkWine), sparkWine.name, sparkWine.vintage ?? null));
+  // One id from the Spark read for both lookup and insert, so a Wonder-refined
+  // name can never store the row under a key future lookups won't compute.
+  const id = wineId(producerOf(sparkWine), sparkWine.name, sparkWine.vintage ?? null);
+  const stored = await getWine(c.env.DB, id);
   let wine: LabelWine;
   let readBy: string;
   let cacheHit: number;
-  let id: string;
   if (stored) {
     wine = { ...sparkWine, name: stored.name, color: stored.color, acidity: stored.acidity, sweetness: stored.sweetness, tannin: stored.tannin, body: stored.body };
     readBy = stored.source;
     cacheHit = 1;
-    id = stored.id;
     await upsertWine(c.env.DB, stored);
   } else {
     wine = sparkWine;
@@ -364,7 +365,6 @@ app.post('/scan', async (c) => {
         }
       }
     }
-    id = wineId(producerOf(wine), wine.name, wine.vintage ?? null);
     wine.name = displayName(producerOf(wine), wine.name, wine.vintage ?? null);
     const row: NewWine = {
       id, producer: producerOf(wine) || null, name: wine.name, vintage: wine.vintage ?? null,
