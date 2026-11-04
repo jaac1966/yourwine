@@ -32,7 +32,7 @@ npm run demo:learn -- --photo samples/bread-and-butter-glasses.jpg
 What you'll see, step by step:
 
 1. `POST /reset` — demo profiles restored.
-2. `POST /scan` — the label is read by **Muse Spark 1.3** (real call, your key), the wine is stored in the local D1 and scored with 4AM: `score 88, cache_hit 0, read_by spark`.
+2. `POST /scan` — the label is read by **Muse Spark 1.3** (real call, your key), the wine is stored in the local D1 and scored with 4AM: a score in the high 80s / low 90s, `cache_hit 0, read_by spark`. Spark's four-axis reading varies by about ±1 between runs (we have seen 88 and 94 for this bottle); once the wine is stored, the row keeps it stable.
 3. `POST /explain` — `explained_by: template`: a deterministic two-sentence explanation built from the same axes as the score.
 4. `POST /feedback loved` — the red-wine profile moves toward this wine.
 5. `POST /scan` of the same photo — `cache_hit 1`, same wine row, **different score** (the profile learned).
@@ -46,7 +46,7 @@ The sample photo was taken with Meta Adventurer glasses, bottle in hand, in a su
 
 `/scan` is capped at 300 label reads per day (`SCAN_DAILY_CAP` in `wrangler.toml`); `GET /usage` shows `cap` and `remaining`.
 
-**Measured on a clean clone (Nov 4):** `git clone` → first verdict in _(time, fill after the judge-path run)_.
+**Measured on a clean clone (Nov 4, Windows 11 laptop):** `git clone` → first verdict in about 12 minutes (`npm install` 41 s; the two label reads took 17 s and 12 s). That run produced a FAIL — the second scan was not a cache hit — which turned out to be a real bug: Spark sometimes returns the name with the vintage inside, so the same bottle got two ids. Fixed the same morning (`601abf3`, canonical name feeds `wineId()`), re-verified on a fresh local D1: miss → hit, then hit → hit.
 
 ### Web demo (no hardware)
 
@@ -66,7 +66,7 @@ Opens at `http://localhost:5173`, talking to `https://api.yourwine.net` by defau
 cp .env.example .env     # repo root; same two keys
 npm run smoke:meta       # one call to Muse Spark 1.3 (text, or a label photo if you pass a path)
 npm run smoke:baseten    # one call to Muse Spark Open on Baseten
-cd api; npm test         # 63 tests, no network
+cd api; npm test         # 67 tests, no network
 ```
 
 ## Why glasses
@@ -168,9 +168,12 @@ Judges: `POST /reset` restores the demo (re-seeds profiles, clears scans, keeps 
 - **Nov 1** — Judge path: `.dev.vars.example`, explanation fallback without Baseten, real sample photo. Web demo (`web/`, Vite).
 - **Nov 2** — `yourwine.net` live on Pages. `/explain` grounded on the score and per-axis deltas; adaptive learning step; single `getProfile()` for every route (fixed a bug where each route read a different profile); deterministic template fallback; web restyle; `?debug=1`. Three live scans in a supermarket aisle.
 - **Nov 3** — Web: Known / New bottle chip, model names in the loading states, "or choose a photo". Android: feedback by `scan_id`, 1024 px photo, single API base — verified on the phone against production. Meta AI 297 broke DAT photo capture on our unit (see above).
-- **Nov 4** — Worker: cache lookup keyed on `wineId()` on both paths, display name = producer + name without repeats and trailing vintage, daily scan cap. 63 tests. README, judge-path timing, video.
+- **Nov 4** — Worker: daily scan cap; display name = producer + name without repeats or trailing vintage. The judge-path run on a clean clone caught a real bug (same bottle → two ids when Spark includes the vintage in the name); fixed: one canonical name feeds `wineId()`, lookup, insert and the response. 67 tests. README, judge-path timing, video.
 
 ## Measurements log
+
+### Oct 20 (before the event) — 31-bottle label test, private prototype
+62 photos of 31 supermarket bottles (front + back), run with the author's pre-event prototype against the same Muse Spark 1.3 API; that prototype's code is not in this repository. **31/31 identified** (front + back); front only 30/31. Vintage 28/28 and alcohol 30/30 where printed; in the 8 wines whose label does not name the grape, Spark inferred it from the appellation (Gamay, Mencía, Tempranillo…) and flagged it as inferred. The 4 poor readings all had confidence ≤ 0.62 and no good reading fell below 0.75 — that is where the 0.7 Wonder threshold comes from. Median 8.0 s per photo.
 
 ### Oct 27 — first calls, Windows laptop, Querétaro
 | Call | Input | Latency | Prompt tok | Reasoning tok | Result |
@@ -212,9 +215,10 @@ L.A. Cetto Merlot 2024: **75 %** with the glasses on Oct 28 and **75 %** with th
 ### Nov 3 — Android app → production
 Real phone, 1000 Stories Bourbon Barrel-Aged Zinfandel: 92 / 56 / 63, Known bottle; "Loved it" by `scan_id` moved the red profile toward higher tannin and body.
 
-### Nov 3–4 — `demo:learn` against production
-Worker `87e9fed2` (Nov 3): hit 13.8 s → loved → hit 9.0 s, **88 → 93**, `explained_by: spark-open-baseten`.
-Worker `fd6024f3` (Nov 4, submitted): hit 14.4 s → loved → hit 13.5 s, **88 → 93**, both scans `cache_hit 1` on the same row, name "Bread & Butter Red Blend", `/usage` → `cap 300, remaining 296`.
+### Nov 3–4 — `demo:learn` against production and on a fresh local D1
+Production, Worker `87e9fed2` (Nov 3): hit 13.8 s → loved → hit 9.0 s, **88 → 93**.
+Fresh local D1, Worker `601abf3` (Nov 4, the judge's case): miss 17.4 s (**94** — Spark read tannin 4 this time) → loved → hit 14.0 s, **97**; second run hit → hit. One row in `wines`.
+Production, Worker `289e9bc3` (Nov 4, submitted): hit 10.6 s → loved → hit 11.3 s, **88 → 93**, `explained_by: spark-open-baseten`, `/usage` → `cap 300, remaining 294`.
 
 ## Troubleshooting
 
@@ -223,13 +227,13 @@ Worker `fd6024f3` (Nov 4, submitted): hit 14.4 s → loved → hit 13.5 s, **88 
 - First `createSession` fails → retried after 2 s.
 - Recording cut before speech → beep + speech-gated silence detection.
 - `/explain` came back empty → Spark spent the whole budget reasoning (`finish_reason: length`); `max_tokens` raised, then replaced by the deterministic template when Baseten is absent.
-- Second scan of the same bottle was a cache miss (Nov 3) → lookup and insert now both use `wineId()`; caught by `demo:learn` against production, not by the unit tests.
+- Second scan of the same bottle was a cache miss on a fresh DB (Nov 4) → Spark sometimes includes the vintage in the name, producing a second id; now one canonical name (producer + name, repeats and trailing vintage stripped) feeds `wineId()` for lookup, insert and response. Caught by the judge-path run, not by the unit tests.
 - DAT photo capture times out after Meta AI 297 → see Android companion app; not fixed on our unit as of Nov 4.
 
 ## Submission
 
 - Tag: `submission` on `main`.
-- Worker in production = this commit, Cloudflare version `fd6024f3` (deployed Nov 4, 09:25 CDMX). Deploys are manual with Wrangler; `main` is not touched after the deadline.
+- Worker in production = this commit, Cloudflare version `289e9bc3` (deployed Nov 4, 10:55 CDMX, commit `601abf3`). Deploys are manual with Wrangler; `main` is not touched after the deadline.
 - Web: Cloudflare Pages builds `main` automatically.
 - Video: _(YouTube link)_
 
