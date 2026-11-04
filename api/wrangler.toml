@@ -17,3 +17,6 @@ migrations_dir = "migrations"
 enabled = true
 invocation_logs = true
 persist = true
+
+[vars]
+SCAN_DAILY_CAP = "300"

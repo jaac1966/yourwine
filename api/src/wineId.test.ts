@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { slug, wineId } from './wineId';
+import { displayName, slug, wineId } from './wineId';
 
 describe('slug', () => {
   it('lowercases, strips accents, drops punctuation, spaces to dashes', () => {
@@ -24,5 +24,20 @@ describe('wineId', () => {
 
   it('strips a repeated producer prefix from the name', () => {
     expect(wineId('Bread & Butter', 'Bread & Butter Red Blend', 2022)).toBe('bread-butter-red-blend-2022');
+  });
+});
+
+describe('displayName', () => {
+  it('strips one repeated producer prefix and the trailing vintage year', () => {
+    expect(displayName('Bread & Butter', 'Bread & Butter Bread & Butter Red Blend 2022', 2022)).toBe('Bread & Butter Red Blend');
+  });
+
+  it('strips a trailing vintage year when vintage is set', () => {
+    expect(displayName('', 'Georges Duboeuf Beaujolais-Villages 2021', 2021)).toBe('Georges Duboeuf Beaujolais-Villages');
+  });
+
+  it('leaves a name without year or repeated producer unchanged', () => {
+    expect(displayName('', 'Beaujolais-Villages', null)).toBe('Beaujolais-Villages');
+    expect(displayName('Other Producer', 'Beaujolais-Villages', null)).toBe('Beaujolais-Villages');
   });
 });

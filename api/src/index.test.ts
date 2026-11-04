@@ -129,7 +129,7 @@ describe('POST /scan', () => {
     expect(data.wine.name).toBe('Wonder Read');
     expect(data.readBy).toBe('wonder');
     const today = new Date().toISOString().slice(0, 10);
-    expect(puts.map(([k]) => k)).toEqual([`usage:${today}:meta`, `usage:${today}:meta`]);
+    expect(puts.map(([k]) => k)).toEqual([`usage:${today}:meta`, `usage:${today}:scans`, `usage:${today}:meta`]);
   });
 
   it('never calls Wonder when Spark confidence is high', async () => {
@@ -184,6 +184,49 @@ describe('POST /scan', () => {
     expect(data.debug.direction).toBeNull();
     expect(data.debug.score).toBe(94);
     expect(data.debug.label).toBe('strong match');
+  });
+
+  it('returns 429 without calling Meta when the daily scan cap is reached', async () => {
+    const fetchMock = mockMeta(metaOk(JSON.stringify(wine)));
+    const capped = env(createFakeDb(), {
+      SCAN_DAILY_CAP: '2',
+      USAGE: { get: async () => '2', put: async () => {} },
+    });
+    const res = await app.request(
+      '/scan',
+      { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ photo_b64: 'abc123', user: 'alex' }) },
+      capped,
+    );
+    expect(res.status).toBe(429);
+    expect(await res.json()).toEqual({ error: 'daily scan limit reached, try again tomorrow' });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('defaults the daily scan cap to 300', async () => {
+    const fetchMock = mockMeta(metaOk(JSON.stringify(wine)));
+    const capped = env(createFakeDb(), { USAGE: { get: async () => '300', put: async () => {} } });
+    const res = await app.request(
+      '/scan',
+      { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ photo_b64: 'abc123', user: 'alex' }) },
+      capped,
+    );
+    expect(res.status).toBe(429);
+    expect(await res.json()).toEqual({ error: 'daily scan limit reached, try again tomorrow' });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('returns the same normalized name on fresh read and cache hit', async () => {
+    const db = createFakeDb();
+    const raw = { ...wine, producer: 'Bread & Butter', name: 'Bread & Butter Bread & Butter Red Blend 2022', vintage: 2022, confidence: 0.9 };
+    mockMetaSequence(metaOk(JSON.stringify(raw)), metaOk(JSON.stringify({ ...raw, name: raw.name.toLowerCase() })));
+    const first = await scanJson({ photo_b64: 'abc123', user: 'alex' }, db);
+    expect((await first.json()).wine.name).toBe('Bread & Butter Red Blend');
+    const second = await scanJson({ photo_b64: 'abc123', user: 'alex' }, db);
+    const data = await second.json();
+    expect(data.cache_hit).toBe(1);
+    expect(data.wine.name).toBe('Bread & Butter Red Blend');
+    const stored = await getWine(db, wineId('Bread & Butter', raw.name, 2022));
+    expect(stored?.name).toBe('Bread & Butter Red Blend');
   });
 });
 
@@ -305,6 +348,19 @@ describe('GET /usage', () => {
     await scanJson({ photo_b64: 'abc123', user: 'alex' }, db);
     const res = await app.request('/usage', {}, env(db));
     expect(await res.json()).toMatchObject({ scans: 2, cache_hits: 1 });
+  });
+
+  it('exposes the scan cap and remaining count', async () => {
+    const db = createFakeDb();
+    const res = await app.request(
+      '/usage',
+      {},
+      env(db, {
+        SCAN_DAILY_CAP: '300',
+        USAGE: { get: async (k: string) => (k.endsWith(':scans') ? '295' : null), put: async () => {} },
+      }),
+    );
+    expect(await res.json()).toMatchObject({ cap: 300, remaining: 5 });
   });
 });
 

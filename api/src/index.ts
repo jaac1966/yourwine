@@ -5,7 +5,7 @@ import {
   getEffectiveAxes, getProfile, getScan, getWine, insertScan, resetDemo, saveProfile, scanStats,
   seedProfilesIfEmpty, setScanFeedback, upsertWine, type D1, type NewWine,
 } from './db';
-import { wineId } from './wineId';
+import { displayName, wineId } from './wineId';
 
 type KV = {
   get(key: string): Promise<string | null>;
@@ -17,6 +17,7 @@ type Env = {
   DB: D1;
   META_API_KEY: string;
   BASETEN_API_KEY?: string;
+  SCAN_DAILY_CAP?: string;
 };
 
 const app = new Hono<{ Bindings: Env }>();
@@ -71,6 +72,21 @@ async function trackUsage(env: Env, provider: 'meta' | 'baseten', tokens: number
   const key = `usage:${new Date().toISOString().slice(0, 10)}:${provider}`;
   const current = Number((await env.USAGE.get(key)) ?? 0);
   await env.USAGE.put(key, String(current + tokens));
+}
+
+const scansKey = (day: string) => `usage:${day}:scans`;
+
+function scanCap(env: Env): number {
+  const raw = Number(env.SCAN_DAILY_CAP ?? 300);
+  return Number.isFinite(raw) ? raw : 300;
+}
+
+async function scansToday(env: Env, day: string): Promise<number> {
+  return Number((await env.USAGE.get(scansKey(day))) ?? 0);
+}
+
+async function countScan(env: Env, day: string): Promise<void> {
+  await env.USAGE.put(scansKey(day), String((await scansToday(env, day)) + 1));
 }
 
 const EXPLAIN_SYSTEM =
@@ -311,10 +327,16 @@ app.post('/scan', async (c) => {
     if (!stored) return c.json({ error: `unknown user: ${id}` }, 404);
     profiles[id] = stored.profile;
   }
+  const day = new Date().toISOString().slice(0, 10);
+  const cap = scanCap(c.env);
+  if ((await scansToday(c.env, day)) >= cap) {
+    return c.json({ error: 'daily scan limit reached, try again tomorrow' }, 429);
+  }
   const t0 = Date.now();
   const spark = await readLabel(c.env.META_API_KEY, 'muse-spark-1.3', mime, b64);
   if (!spark) return c.json({ error: 'label read failed' }, 502);
   await trackUsage(c.env, 'meta', spark.tokens);
+  await countScan(c.env, day);
   if (!spark.wine?.color) return c.json({ error: 'could not read label' }, 502);
   const sparkWine = spark.wine as LabelWine;
   const producerOf = (w: LabelWine) => w.producer ?? w.winery ?? '';
@@ -324,7 +346,7 @@ app.post('/scan', async (c) => {
   let cacheHit: number;
   let id: string;
   if (stored) {
-    wine = { ...sparkWine, color: stored.color, acidity: stored.acidity, sweetness: stored.sweetness, tannin: stored.tannin, body: stored.body };
+    wine = { ...sparkWine, name: stored.name, color: stored.color, acidity: stored.acidity, sweetness: stored.sweetness, tannin: stored.tannin, body: stored.body };
     readBy = stored.source;
     cacheHit = 1;
     id = stored.id;
@@ -343,6 +365,7 @@ app.post('/scan', async (c) => {
       }
     }
     id = wineId(producerOf(wine), wine.name, wine.vintage ?? null);
+    wine.name = displayName(producerOf(wine), wine.name, wine.vintage ?? null);
     const row: NewWine = {
       id, producer: producerOf(wine) || null, name: wine.name, vintage: wine.vintage ?? null,
       region: wine.region ?? null, country: wine.country ?? null,
@@ -522,7 +545,12 @@ app.get('/usage', async (c) => {
     c.env.USAGE.get(`usage:${day}:baseten`),
   ]);
   const stats = await scanStats(c.env.DB, day);
-  return c.json({ date: day, meta: Number(meta ?? 0), baseten: Number(baseten ?? 0), scans: stats.scans, cache_hits: stats.cacheHits });
+  const cap = scanCap(c.env);
+  const used = await scansToday(c.env, day);
+  return c.json({
+    date: day, meta: Number(meta ?? 0), baseten: Number(baseten ?? 0), scans: stats.scans, cache_hits: stats.cacheHits,
+    cap, remaining: Math.max(0, cap - used),
+  });
 });
 
 export default app;
