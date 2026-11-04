@@ -13,6 +13,9 @@ import org.json.JSONObject
 
 const val API_BASE = "https://api.yourwine.net"
 
+fun feedbackBody(scanId: String, loved: Boolean): Map<String, String> =
+    mapOf("scan_id" to scanId, "verdict" to if (loved) "loved" else "not_for_me")
+
 object WineApi {
     private val client = OkHttpClient.Builder()
         .callTimeout(40, TimeUnit.SECONDS)

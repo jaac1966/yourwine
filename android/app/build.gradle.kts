@@ -48,4 +48,5 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.13.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.10.0")
     implementation("com.squareup.okhttp3:okhttp:4.10.0")
+    testImplementation("junit:junit:4.13.2")
 }

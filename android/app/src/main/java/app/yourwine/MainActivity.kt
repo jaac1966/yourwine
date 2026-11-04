@@ -90,6 +90,8 @@ class MainActivity : ComponentActivity() {
     private var camera: Camera? = null
     private var photoJobs = emptyList<Job>()
     private var pendingCapture = false
+    private var awaitingPhoto = false
+    private var pickedPhoto: ByteArray? = null
     private var mockGlasses: MockGlasses? = null
     private var tts: TextToSpeech? = null
     private var lastWine: JSONObject? = null
@@ -145,7 +147,13 @@ class MainActivity : ComponentActivity() {
         registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
             if (uri == null) return@registerForActivityResult
             mockGlasses?.services?.cameraCapture?.setCapturedPhoto(uri)
-            Log.i(TAG, "mock photo set: $uri")
+            pickedPhoto = try {
+                contentResolver.openInputStream(uri)?.use { it.readBytes() }
+            } catch (e: Exception) {
+                Log.w(TAG, "could not read picked photo: ${e.message}")
+                null
+            }
+            Log.i(TAG, "picked photo staged: $uri (${pickedPhoto?.size ?: 0} bytes)")
         }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -436,11 +444,9 @@ class MainActivity : ComponentActivity() {
         }
         lifecycleScope.launch {
             try {
-                WineApi.post(
-                    "/feedback", JSONObject()
-                        .put("scan_id", scanId)
-                        .put("verdict", if (loved) "loved" else "not_for_me"),
-                )
+                val body = JSONObject(feedbackBody(scanId, loved))
+                Log.i(TAG, "feedback body: $body")
+                WineApi.post("/feedback", body)
             } catch (e: Exception) {
                 showError("api: ${e.message}")
             }
@@ -450,13 +456,22 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun startCapture() {
+        teardownCamera()
+        val picked = pickedPhoto
+        if (picked != null) {
+            pickedPhoto = null
+            Log.i(TAG, "scan photo source: picked (${picked.size} bytes)")
+            onPhoto(picked)
+            return
+        }
+        awaitingPhoto = true
         val active = session
         if (active == null || !sessionStarted) {
+            awaitingPhoto = false
             showError("no started session")
             busy = false
             return
         }
-        teardownCamera()
         active.addCamera().fold(
             onSuccess = { added ->
                 camera = added
@@ -483,7 +498,15 @@ class MainActivity : ComponentActivity() {
                 }
             },
             lifecycleScope.launch {
-                photo.photoStream.collect { capture -> onPhoto(capture.imageData) }
+                photo.photoStream.collect { capture ->
+                    if (!awaitingPhoto) {
+                        Log.i(TAG, "ignoring photo outside an Ask (${capture.imageData.size} bytes)")
+                        return@collect
+                    }
+                    awaitingPhoto = false
+                    Log.i(TAG, "scan photo source: glasses (${capture.imageData.size} bytes)")
+                    onPhoto(capture.imageData)
+                }
             },
             lifecycleScope.launch {
                 photo.transferProgressStream.collect { progress ->
@@ -492,6 +515,7 @@ class MainActivity : ComponentActivity() {
             },
             lifecycleScope.launch {
                 photo.errors.collect {
+                    awaitingPhoto = false
                     showError("photo: ${it.description}")
                     busy = false
                 }
@@ -503,6 +527,7 @@ class MainActivity : ComponentActivity() {
         photoJobs.forEach { it.cancel() }
         photoJobs = emptyList()
         pendingCapture = false
+        awaitingPhoto = false
         camera?.stop()
         camera = null
         session?.removeCamera()?.onFailure { error, _ -> Log.w(TAG, "removeCamera: ${error.description}") }
@@ -527,7 +552,8 @@ class MainActivity : ComponentActivity() {
                 )
                 val wine = scan.getJSONObject("wine")
                 lastWine = wine
-                lastScanId = scan.optString("scan_id").ifEmpty { null }
+                lastScanId = scan.optString("scan_id").ifEmpty { scan.optString("scanId") }.ifEmpty { null }
+                Log.i(TAG, "scan id: $lastScanId")
                 val matches = scan.getJSONArray("matches")
                 lastScores = (0 until matches.length()).associate {
                     val m = matches.getJSONObject(it)
@@ -574,11 +600,9 @@ class MainActivity : ComponentActivity() {
         busy = true
         lifecycleScope.launch {
             try {
-                WineApi.post(
-                    "/feedback", JSONObject()
-                        .put("scan_id", scanId)
-                        .put("verdict", if (loved) "loved" else "not_for_me"),
-                )
+                val body = JSONObject(feedbackBody(scanId, loved))
+                Log.i(TAG, "feedback body: $body")
+                WineApi.post("/feedback", body)
                 Log.i(TAG, "feedback sent: $loved")
             } catch (e: Exception) {
                 showError("api: ${e.message}")
