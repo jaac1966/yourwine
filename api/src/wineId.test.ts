@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { displayName, slug, wineId } from './wineId';
+import { canonicalName, slug, wineId } from './wineId';
 
 describe('slug', () => {
   it('lowercases, strips accents, drops punctuation, spaces to dashes', () => {
@@ -27,22 +27,46 @@ describe('wineId', () => {
   });
 });
 
-describe('displayName', () => {
+describe('canonicalName', () => {
   it('is producer plus distinctive name with the vintage year removed', () => {
-    expect(displayName('Bread & Butter', 'Bread & Butter Red Blend', 2022)).toBe('Bread & Butter Red Blend');
-    expect(displayName('Bread & Butter', 'Red Blend', 2022)).toBe('Bread & Butter Red Blend');
-    expect(displayName('Georges Duboeuf', 'Georges Duboeuf Beaujolais-Villages 2021', 2021)).toBe('Georges Duboeuf Beaujolais-Villages');
+    expect(canonicalName('Bread & Butter', 'Bread & Butter Red Blend', 2022)).toBe('Bread & Butter Red Blend');
+    expect(canonicalName('Bread & Butter', 'Red Blend', 2022)).toBe('Bread & Butter Red Blend');
+    expect(canonicalName('Georges Duboeuf', 'Georges Duboeuf Beaujolais-Villages 2021', 2021)).toBe('Georges Duboeuf Beaujolais-Villages');
   });
 
   it('collapses every leading repeat of the producer to one', () => {
-    expect(displayName('Bread & Butter', 'Bread & Butter Bread & Butter Red Blend 2022', 2022)).toBe('Bread & Butter Red Blend');
+    expect(canonicalName('Bread & Butter', 'Bread & Butter Bread & Butter Red Blend 2022', 2022)).toBe('Bread & Butter Red Blend');
   });
 
   it('strips a trailing vintage year when vintage is set', () => {
-    expect(displayName('', 'Georges Duboeuf Beaujolais-Villages 2021', 2021)).toBe('Georges Duboeuf Beaujolais-Villages');
+    expect(canonicalName('', 'Georges Duboeuf Beaujolais-Villages 2021', 2021)).toBe('Georges Duboeuf Beaujolais-Villages');
+  });
+
+  it('strips a plausible year when vintage is null, keeps other trailing numbers', () => {
+    expect(canonicalName('', 'Some Wine 2019', null)).toBe('Some Wine');
+    expect(canonicalName('', 'Some Wine 1899', null)).toBe('Some Wine 1899');
+    expect(canonicalName('', 'Wine 2021', 2022)).toBe('Wine 2021');
   });
 
   it('leaves a name without producer or year unchanged', () => {
-    expect(displayName('', 'Beaujolais-Villages', null)).toBe('Beaujolais-Villages');
+    expect(canonicalName('', 'Beaujolais-Villages', null)).toBe('Beaujolais-Villages');
+  });
+});
+
+describe('canonical wine identity', () => {
+  it('maps year and no-year reads of the same bottle to one id and name', () => {
+    const withYear = canonicalName('Bread & Butter', 'Bread & Butter Red Blend 2022', 2022);
+    const withoutYear = canonicalName('Bread & Butter', 'Red Blend', 2022);
+    expect(withYear).toBe('Bread & Butter Red Blend');
+    expect(withoutYear).toBe('Bread & Butter Red Blend');
+    expect(wineId('Bread & Butter', withYear, 2022)).toBe('bread-butter-red-blend-2022');
+    expect(wineId('Bread & Butter', withoutYear, 2022)).toBe('bread-butter-red-blend-2022');
+  });
+
+  it('builds the id from the canonical name', () => {
+    const name = canonicalName('Georges Duboeuf', 'Beaujolais-Villages 2021', 2021);
+    expect(name).toBe('Georges Duboeuf Beaujolais-Villages');
+    // slug() strips hyphens (unchanged wineId behavior); the id is stable either way.
+    expect(wineId('Georges Duboeuf', name, 2021)).toBe('georges-duboeuf-beaujolaisvillages-2021');
   });
 });

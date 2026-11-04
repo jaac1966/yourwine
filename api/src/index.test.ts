@@ -220,12 +220,13 @@ describe('POST /scan', () => {
     const raw = { ...wine, producer: 'Bread & Butter', name: 'Bread & Butter Bread & Butter Red Blend 2022', vintage: 2022, confidence: 0.9 };
     mockMetaSequence(metaOk(JSON.stringify(raw)), metaOk(JSON.stringify({ ...raw, name: raw.name.toLowerCase() })));
     const first = await scanJson({ photo_b64: 'abc123', user: 'alex' }, db);
-    expect((await first.json()).wine.name).toBe('Bread & Butter Red Blend');
+    const firstData = await first.json();
+    expect(firstData.wine.name).toBe('Bread & Butter Red Blend');
     const second = await scanJson({ photo_b64: 'abc123', user: 'alex' }, db);
     const data = await second.json();
     expect(data.cache_hit).toBe(1);
     expect(data.wine.name).toBe('Bread & Butter Red Blend');
-    const stored = await getWine(db, wineId('Bread & Butter', raw.name, 2022));
+    const stored = await getWine(db, firstData.wine_id);
     expect(stored?.name).toBe('Bread & Butter Red Blend');
   });
 
@@ -245,6 +246,26 @@ describe('POST /scan', () => {
     expect(data.cache_hit).toBe(1);
     expect(fetchMock).toHaveBeenCalledTimes(3);
     expect((await getWine(db, wineId('', 'Spark Guess', undefined)))?.scanCount).toBe(2);
+  });
+
+  it('hits the same row when Spark returns the name with and without the year', async () => {
+    const db = createFakeDb();
+    const base = { ...wine, producer: 'Bread & Butter', vintage: 2022, confidence: 0.9 };
+    mockMetaSequence(
+      metaOk(JSON.stringify({ ...base, name: 'Bread & Butter Red Blend 2022' })),
+      metaOk(JSON.stringify({ ...base, name: 'Bread & Butter Red Blend' })),
+    );
+    const first = await scanJson({ photo_b64: 'abc123', user: 'alex' }, db);
+    const firstData = await first.json();
+    expect(firstData.cache_hit).toBe(0);
+    expect(firstData.wine.name).toBe('Bread & Butter Red Blend');
+    expect(firstData.wine_id).toBe('bread-butter-red-blend-2022');
+    const second = await scanJson({ photo_b64: 'abc123', user: 'alex' }, db);
+    const secondData = await second.json();
+    expect(secondData.cache_hit).toBe(1);
+    expect(secondData.wine.name).toBe('Bread & Butter Red Blend');
+    expect(secondData.wine_id).toBe('bread-butter-red-blend-2022');
+    expect(db.tables.wines.size).toBe(1);
   });
 });
 

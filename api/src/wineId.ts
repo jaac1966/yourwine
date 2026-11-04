@@ -17,10 +17,11 @@ export function wineId(producer: string, name: string, vintage?: number | null):
   return `${p}-${n}-${vintage ?? 'nv'}`;
 }
 
-// Stable display name: producer + distinctive name, trailing vintage removed.
+// Canonical wine name: producer + distinctive name, trailing vintage removed.
 // Removes every leading repeat of the producer, re-adds it once, then strips
-// a trailing year equal to vintage. Idempotent.
-export function displayName(producer: string, name: string, vintage?: number | null): string {
+// a trailing 4-digit year equal to vintage (or any plausible 1950-2035 year
+// when vintage is null). Idempotent: safe to apply to stored names.
+export function canonicalName(producer: string, name: string, vintage?: number | null): string {
   let n = name.replace(/\s+/g, ' ').trim();
   const prod = producer.replace(/\s+/g, ' ').trim();
   if (prod) {
@@ -30,8 +31,13 @@ export function displayName(producer: string, name: string, vintage?: number | n
     }
     n = `${prod} ${n}`.trim();
   }
-  if (vintage != null) {
-    n = n.replace(new RegExp(`\\s+${vintage}$`), '');
+  const yearMatch = n.match(/\s+(\d{4})$/);
+  if (yearMatch) {
+    const year = Number(yearMatch[1]);
+    const v = vintage != null ? Number(vintage) : null;
+    if ((v != null && year === v) || (v == null && year >= 1950 && year <= 2035)) {
+      n = n.slice(0, -yearMatch[0].length);
+    }
   }
   return n.replace(/\s+/g, ' ').trim();
 }

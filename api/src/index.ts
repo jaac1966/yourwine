@@ -5,7 +5,7 @@ import {
   getEffectiveAxes, getProfile, getScan, getWine, insertScan, resetDemo, saveProfile, scanStats,
   seedProfilesIfEmpty, setScanFeedback, upsertWine, type D1, type NewWine,
 } from './db';
-import { displayName, wineId } from './wineId';
+import { canonicalName, wineId } from './wineId';
 
 type KV = {
   get(key: string): Promise<string | null>;
@@ -340,15 +340,18 @@ app.post('/scan', async (c) => {
   if (!spark.wine?.color) return c.json({ error: 'could not read label' }, 502);
   const sparkWine = spark.wine as LabelWine;
   const producerOf = (w: LabelWine) => w.producer ?? w.winery ?? '';
-  // One id from the Spark read for both lookup and insert, so a Wonder-refined
-  // name can never store the row under a key future lookups won't compute.
-  const id = wineId(producerOf(sparkWine), sparkWine.name, sparkWine.vintage ?? null);
+  // Canonicalize once, up front: the id, the lookup, the insert and the
+  // response all derive from this single canonical name.
+  const producer = producerOf(sparkWine);
+  const vintage = sparkWine.vintage ?? null;
+  const canonical = canonicalName(producer, sparkWine.name, vintage);
+  const id = wineId(producer, canonical, vintage);
   const stored = await getWine(c.env.DB, id);
   let wine: LabelWine;
   let readBy: string;
   let cacheHit: number;
   if (stored) {
-    wine = { ...sparkWine, name: stored.name, color: stored.color, acidity: stored.acidity, sweetness: stored.sweetness, tannin: stored.tannin, body: stored.body };
+    wine = { ...sparkWine, name: canonicalName(stored.producer ?? '', stored.name, stored.vintage), color: stored.color, acidity: stored.acidity, sweetness: stored.sweetness, tannin: stored.tannin, body: stored.body };
     readBy = stored.source;
     cacheHit = 1;
     await upsertWine(c.env.DB, stored);
@@ -365,7 +368,7 @@ app.post('/scan', async (c) => {
         }
       }
     }
-    wine.name = displayName(producerOf(wine), wine.name, wine.vintage ?? null);
+    wine.name = wine === sparkWine ? canonical : canonicalName(producerOf(wine), wine.name, wine.vintage ?? null);
     const row: NewWine = {
       id, producer: producerOf(wine) || null, name: wine.name, vintage: wine.vintage ?? null,
       region: wine.region ?? null, country: wine.country ?? null,
@@ -389,7 +392,7 @@ app.post('/scan', async (c) => {
   );
   const scoreDebug = explainDebug(scoreFacts);
   return c.json({
-    wine, matches, readBy, read_by: readBy, scan_id: scanId, cache_hit: cacheHit,
+    wine, matches, readBy, read_by: readBy, scan_id: scanId, cache_hit: cacheHit, wine_id: id,
     debug: {
       scan_id: scanId,
       wine_axes_used_for_score: scoreDebug.wine_axes,
