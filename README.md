@@ -2,7 +2,7 @@
 
 **Your Meta Adventurer glasses tell you whether you'll like a wine before you buy it — based on your own taste, not the crowd's.**
 
-**Live demo:** https://yourwine.net · **API:** https://api.yourwine.net · **Video:** _(link added Nov 4, see [Submission](#submission))_
+**Live demo:** https://yourwine.net · **API:** https://api.yourwine.net · **Video:** _(link added Nov 4, see [Submission](#submission))_ → **Video:** https://youtu.be/9-52TjrFd38
 
 Built for the Meta Global AI Developer Hackathon 2026 (Indie track), Oct 27 – Nov 4. Built with Muse Code, Muse Spark 1.3, Muse Voice Transcribe and Muse Spark Open.
 
@@ -235,7 +235,7 @@ Production, Worker `289e9bc3` (Nov 4, submitted): hit 10.6 s → loved → hit 1
 - Tag: `submission` on `main`.
 - Worker in production = this commit, Cloudflare version `289e9bc3` (deployed Nov 4, 10:55 CDMX, commit `601abf3`). Deploys are manual with Wrangler; `main` is not touched after the deadline.
 - Web: Cloudflare Pages builds `main` automatically.
-- Video: _(YouTube link)_
+- Video: _(YouTube link)_ → - Video: https://youtu.be/9-52TjrFd38 (3 min, unlisted)
 
 ## License
 
