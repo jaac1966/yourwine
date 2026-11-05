@@ -2,7 +2,7 @@
 
 **Your Meta Adventurer glasses tell you whether you'll like a wine before you buy it — based on your own taste, not the crowd's.**
 
-**Live demo:** https://yourwine.net · **API:** https://api.yourwine.net · **Video:** _(link added Nov 4, see [Submission](#submission))_ → **Video:** https://youtu.be/9-52TjrFd38
+**Live demo:** https://yourwine.net · **API:** https://api.yourwine.net · **Video:** https://youtu.be/9-52TjrFd38
 
 Built for the Meta Global AI Developer Hackathon 2026 (Indie track), Oct 27 – Nov 4. Built with Muse Code, Muse Spark 1.3, Muse Voice Transcribe and Muse Spark Open.
 
